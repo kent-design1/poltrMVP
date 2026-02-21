@@ -88,6 +88,8 @@ def _serialize_ballot(row: dict) -> dict:
         "record": record,
         "indexedAt": get_date_iso(row, "indexed_at"),
         "likeCount": get_number(row, "like_count"),
+        "argumentCount": get_number(row, "argument_count"),
+        "commentCount": get_number(row, "comment_count"),
         "replyCount": get_number(row, "reply_count"),
         "bookmarkCount": get_number(row, "bookmark_count"),
         "labels": get_array(row, "labels"),

@@ -322,12 +322,18 @@ export default function BallotSearch() {
               </div>
 
               <div style={{
+                display: 'flex',
+                gap: '16px',
                 marginTop: '12px',
-                fontSize: '11px',
-                color: '#999',
-                wordBreak: 'break-all'
+                fontSize: '13px',
+                color: '#666'
               }}>
-                URI: {ballot.uri}
+                {(ballot.argumentCount ?? 0) > 0 && (
+                  <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
+                )}
+                {(ballot.commentCount ?? 0) > 0 && (
+                  <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
+                )}
               </div>
             </div>
           );

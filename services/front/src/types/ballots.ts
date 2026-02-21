@@ -89,6 +89,8 @@ export interface BallotWithMetadata {
   };
   indexedAt?: string;
   likeCount?: number;
+  argumentCount?: number;
+  commentCount?: number;
   replyCount?: number;
   bookmarkCount?: number;
   labels?: string[];
