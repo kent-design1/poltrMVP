@@ -5,7 +5,7 @@
     "main": {
       "type": "record",
       "description": "A reviewer's evaluation of an argument",
-      "key": "tid",
+      "key": "any",
       "record": {
         "type": "object",
         "properties": {

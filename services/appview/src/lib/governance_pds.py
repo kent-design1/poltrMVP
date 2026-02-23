@@ -117,3 +117,49 @@ async def create_governance_record(
         )
 
     return resp.json()
+
+
+async def put_governance_record(
+    client: httpx.AsyncClient, collection: str, rkey: str, record: dict
+) -> dict:
+    """Write a record to the governance PDS repo with an explicit rkey (upsert).
+    Returns {uri, cid}."""
+    gov_did = _governance_did()
+    if not gov_did:
+        raise RuntimeError("PDS_GOVERNANCE_ACCOUNT_DID not configured")
+
+    token = await get_governance_token(client)
+
+    resp = await client.post(
+        f"{_pds_internal_url()}/xrpc/com.atproto.repo.putRecord",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        json={
+            "repo": gov_did,
+            "collection": collection,
+            "rkey": rkey,
+            "record": record,
+        },
+    )
+
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Governance putRecord failed for {collection}/{rkey} "
+            f"({resp.status_code}): {resp.text}"
+        )
+
+    return resp.json()
+
+
+def compose_review_rkey(argument_uri: str, did: str) -> str:
+    """Compose a deterministic rkey for review records.
+
+    Format: {argument_rkey}-{did_suffix}
+    This makes duplicate invitations/responses structurally impossible
+    at the PDS level when used with putRecord.
+    """
+    arg_rkey = argument_uri.split("/")[-1]
+    did_suffix = did.split(":")[-1]
+    return f"{arg_rkey}-{did_suffix}"

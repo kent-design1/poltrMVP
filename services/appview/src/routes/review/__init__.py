@@ -20,7 +20,7 @@ import httpx
 
 from src.auth.middleware import TSession, verify_session_token
 from src.lib.db import get_pool
-from src.lib.governance_pds import create_governance_record, _governance_did
+from src.lib.governance_pds import put_governance_record, compose_review_rkey, _governance_did
 
 logger = logging.getLogger("review")
 
@@ -176,6 +176,7 @@ async def submit_review(
             )
 
     # Write review response to governance PDS
+    rkey = compose_review_rkey(argument_uri, session.did)
     review_record = {
         "$type": "app.ch.poltr.review.response",
         "argument": argument_uri,
@@ -190,8 +191,8 @@ async def submit_review(
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            result = await create_governance_record(
-                client, "app.ch.poltr.review.response", review_record
+            result = await put_governance_record(
+                client, "app.ch.poltr.review.response", rkey, review_record
             )
     except Exception as err:
         logger.error(f"Failed to write review to governance PDS: {err}")

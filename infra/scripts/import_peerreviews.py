@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""
+Import peer-review data from the Demokratiefabrik xlsx dumps into AT Protocol
+as app.ch.poltr.review.invitation and app.ch.poltr.review.response records.
+
+Reads two xlsx files:
+  - content_peerreview.xlsx: 99 INSERT procedures (aggregated outcomes)
+  - content_peerreview_progression.xlsx: 2,562 individual invitation/response rows
+
+Records are written to the governance account's PDS repo using putRecord with
+composed rkeys ({content_id}-{mapped_did_suffix}), making duplicates
+structurally impossible and re-runs fully idempotent.
+
+Environment variables:
+  PDS_HOST        PDS endpoint (default: http://localhost:2583)
+  GOV_HANDLE      Governance account handle (for session creation)
+  GOV_PASSWORD    Governance account password
+  BALLOT_URI      AT URI of the ballot to scope arguments to
+  DRY_RUN         Set to "true" to inspect records without writing (default: false)
+  PEERREVIEW_XLSX Path to content_peerreview.xlsx (default: dump/content_peerreview.xlsx)
+  PROGRESSION_XLSX Path to content_peerreview_progression.xlsx
+                   (default: dump/content_peerreview_progression.xlsx)
+"""
+
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+import openpyxl
+import requests
+
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PeerReview:
+    id: int
+    content_id: int
+    operation: str
+    date_created: Optional[str]
+
+
+@dataclass
+class Progression:
+    id: int
+    content_peerreview_id: int
+    user_id: int
+    response: Optional[int]  # 1=approve, 0=reject, None=no response
+    date_created: Optional[str]
+    date_responded: Optional[str]
+    criteria_accept1: Optional[int]
+    criteria_accept2: Optional[int]
+    criteria_accept3: Optional[int]
+    criteria_accept4: Optional[int]
+    criteria_accept5: Optional[int]
+
+
+@dataclass
+class PdsUser:
+    did: str
+    handle: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+CRITERIA_MAP = [
+    ("factual_accuracy", "Factual Accuracy"),
+    ("relevance", "Relevance to Ballot"),
+    ("clarity", "Clarity"),
+    ("unity_of_thought", "Unity of Thought"),
+    ("non_duplication", "Non-Duplication"),
+]
+
+
+def _compose_rkey(content_id: int, did: str) -> str:
+    """Compose a deterministic rkey: {content_id}-{did_suffix}."""
+    did_suffix = did.split(":")[-1]
+    return f"{content_id}-{did_suffix}"
+
+
+def _format_datetime(dt_str: Optional[str]) -> str:
+    """Convert xlsx datetime string to ISO 8601."""
+    if not dt_str:
+        return datetime.now(timezone.utc).isoformat()
+    try:
+        if isinstance(dt_str, datetime):
+            if dt_str.tzinfo is None:
+                dt_str = dt_str.replace(tzinfo=timezone.utc)
+            return dt_str.isoformat()
+        dt = datetime.strptime(str(dt_str).strip(), "%Y-%m-%d %H:%M:%S")
+        return dt.replace(tzinfo=timezone.utc).isoformat()
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc).isoformat()
+
+
+def _criteria_to_rating(val: Optional[int]) -> int:
+    """Map old binary criteria (0/1) to rating scale (1/5)."""
+    if val is not None and int(val) == 1:
+        return 5
+    return 1
+
+
+# ---------------------------------------------------------------------------
+# Importer
+# ---------------------------------------------------------------------------
+
+class PeerReviewImporter:
+    def __init__(self, pds_host: str, gov_handle: str, gov_password: str,
+                 ballot_uri: str, dry_run: bool = False):
+        self.pds_host = pds_host
+        self.gov_handle = gov_handle
+        self.gov_password = gov_password
+        self.ballot_uri = ballot_uri
+        self.dry_run = dry_run
+        self.gov_did: Optional[str] = None
+        self.access_token: Optional[str] = None
+        self.users: list[PdsUser] = []
+        self.content_id_to_argument_uri: dict[int, str] = {}  # content_id -> AT URI
+
+    def authenticate(self) -> bool:
+        """Create a PDS session for the governance account."""
+        print(f"Authenticating as {self.gov_handle}...")
+        try:
+            resp = requests.post(
+                f"{self.pds_host}/xrpc/com.atproto.server.createSession",
+                json={"identifier": self.gov_handle, "password": self.gov_password},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self.access_token = data["accessJwt"]
+            self.gov_did = data["did"]
+            print(f"  Authenticated as {self.gov_did}")
+            return True
+        except Exception as e:
+            print(f"ERROR: Authentication failed - {e}")
+            return False
+
+    def discover_users(self) -> bool:
+        """List all repos on PDS to build the user pool for deterministic mapping."""
+        print("Discovering PDS users...")
+        repos_url = f"{self.pds_host}/xrpc/com.atproto.sync.listRepos?limit=1000"
+        try:
+            resp = requests.get(repos_url)
+            resp.raise_for_status()
+            repos = resp.json().get("repos", [])
+        except Exception as e:
+            print(f"ERROR: Failed to list repos - {e}")
+            return False
+
+        for repo in repos:
+            did = repo["did"]
+            try:
+                desc = requests.get(
+                    f"{self.pds_host}/xrpc/com.atproto.repo.describeRepo?repo={did}"
+                )
+                desc.raise_for_status()
+                handle = desc.json().get("handle", "")
+            except Exception:
+                handle = did
+            self.users.append(PdsUser(did=did, handle=handle))
+
+        # Sort by DID for deterministic mapping
+        self.users.sort(key=lambda u: u.did)
+        print(f"  Found {len(self.users)} user(s) on PDS")
+        for u in self.users:
+            print(f"    {u.handle} ({u.did})")
+
+        if not self.users:
+            print("ERROR: No users found on PDS")
+            return False
+        return True
+
+    def scan_existing_arguments(self):
+        """Scan governance and all user repos for argument records.
+        Builds content_id → AT URI mapping using the rkey (which is the content_id)."""
+        print("Scanning PDS for existing argument records...")
+        collection = "app.ch.poltr.ballot.argument"
+
+        for user in self.users:
+            cursor = None
+            while True:
+                url = (
+                    f"{self.pds_host}/xrpc/com.atproto.repo.listRecords"
+                    f"?repo={user.did}&collection={collection}&limit=100"
+                )
+                if cursor:
+                    url += f"&cursor={cursor}"
+                try:
+                    resp = requests.get(url)
+                    if resp.status_code != 200:
+                        break
+                    data = resp.json()
+                    records = data.get("records", [])
+                    for rec in records:
+                        uri = rec.get("uri", "")
+                        rkey = uri.split("/")[-1]
+                        ballot_ref = rec.get("value", {}).get("ballot", "")
+                        if rkey and ballot_ref == self.ballot_uri:
+                            try:
+                                content_id = int(rkey)
+                                self.content_id_to_argument_uri[content_id] = uri
+                            except ValueError:
+                                pass
+                    cursor = data.get("cursor")
+                    if not cursor or not records:
+                        break
+                except Exception:
+                    break
+
+        print(f"  Found {len(self.content_id_to_argument_uri)} argument(s) for this ballot")
+
+    def _map_user_id_to_did(self, old_user_id: int) -> str:
+        """Deterministic mapping: hash(old_user_id) % len(users)."""
+        idx = hash(old_user_id) % len(self.users)
+        return self.users[idx].did
+
+    def _put_record(self, collection: str, rkey: str, record: dict) -> bool:
+        """Write a record to the governance PDS repo via putRecord."""
+        if self.dry_run:
+            print(f"  [DRY RUN] putRecord {collection}/{rkey}")
+            return True
+
+        url = f"{self.pds_host}/xrpc/com.atproto.repo.putRecord"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "repo": self.gov_did,
+            "collection": collection,
+            "rkey": rkey,
+            "record": record,
+        }
+
+        try:
+            time.sleep(0.05)
+            resp = requests.post(url, headers=headers, json=payload)
+            if resp.status_code in (200, 201):
+                return True
+            try:
+                err = resp.json()
+                msg = err.get("message") or err.get("error") or f"HTTP {resp.status_code}"
+                print(f"  Failed ({resp.status_code}): {msg}")
+            except Exception:
+                print(f"  Failed ({resp.status_code}): {resp.text[:200]}")
+            return False
+        except requests.exceptions.RequestException as e:
+            print(f"  Failed: {e}")
+            return False
+
+    def import_from_xlsx(self, peerreview_path: str, progression_path: str):
+        """Read peer review data from xlsx files and import."""
+        # --- Read peer reviews ---
+        print(f"Reading peer reviews from: {peerreview_path}")
+        wb = openpyxl.load_workbook(peerreview_path, read_only=True)
+        ws = wb[wb.sheetnames[0]]
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+        peerreviews: dict[int, PeerReview] = {}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            d = dict(zip(headers, row))
+            if d.get("operation") != "INSERT":
+                continue
+            pr_id = int(d["id"])
+            peerreviews[pr_id] = PeerReview(
+                id=pr_id,
+                content_id=int(d["content_id"]),
+                operation=d["operation"],
+                date_created=d.get("date_created"),
+            )
+        wb.close()
+        print(f"  Found {len(peerreviews)} INSERT peer review procedure(s)")
+
+        # --- Read progressions ---
+        print(f"Reading progressions from: {progression_path}")
+        wb = openpyxl.load_workbook(progression_path, read_only=True)
+        ws = wb[wb.sheetnames[0]]
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+        progressions: list[Progression] = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            d = dict(zip(headers, row))
+            pr_id = int(d["content_peerreview_id"])
+            if pr_id not in peerreviews:
+                continue
+            progressions.append(Progression(
+                id=int(d["id"]),
+                content_peerreview_id=pr_id,
+                user_id=int(d["user_id"]),
+                response=int(d["response"]) if d.get("response") is not None else None,
+                date_created=d.get("date_created"),
+                date_responded=d.get("date_responded"),
+                criteria_accept1=int(d["criteria_accept1"]) if d.get("criteria_accept1") is not None else None,
+                criteria_accept2=int(d["criteria_accept2"]) if d.get("criteria_accept2") is not None else None,
+                criteria_accept3=int(d["criteria_accept3"]) if d.get("criteria_accept3") is not None else None,
+                criteria_accept4=int(d["criteria_accept4"]) if d.get("criteria_accept4") is not None else None,
+                criteria_accept5=int(d["criteria_accept5"]) if d.get("criteria_accept5") is not None else None,
+            ))
+        wb.close()
+        print(f"  Found {len(progressions)} progression row(s) for INSERT procedures")
+
+        # --- Group progressions by peer review ---
+        pr_to_progressions: dict[int, list[Progression]] = {}
+        for prog in progressions:
+            pr_to_progressions.setdefault(prog.content_peerreview_id, []).append(prog)
+
+        # --- Import ---
+        invitations_created = 0
+        responses_created = 0
+        skipped_no_argument = 0
+        failed = 0
+
+        for pr_id, pr in sorted(peerreviews.items()):
+            argument_uri = self.content_id_to_argument_uri.get(pr.content_id)
+            if not argument_uri:
+                skipped_no_argument += 1
+                continue
+
+            progs = pr_to_progressions.get(pr_id, [])
+            if not progs:
+                continue
+
+            arg_rkey = str(pr.content_id)
+            print(f"\n  Peer review #{pr_id} for content_id={pr.content_id} ({len(progs)} progressions)")
+
+            for prog in progs:
+                mapped_did = self._map_user_id_to_did(prog.user_id)
+                did_suffix = mapped_did.split(":")[-1]
+                rkey = f"{arg_rkey}-{did_suffix}"
+
+                # Always create invitation
+                invitation_record = {
+                    "$type": "app.ch.poltr.review.invitation",
+                    "argument": argument_uri,
+                    "invitee": mapped_did,
+                    "createdAt": _format_datetime(prog.date_created),
+                }
+
+                if self._put_record("app.ch.poltr.review.invitation", rkey, invitation_record):
+                    invitations_created += 1
+                else:
+                    failed += 1
+                    continue
+
+                # Create response only if the reviewer actually responded
+                if prog.response is not None:
+                    vote = "APPROVE" if prog.response == 1 else "REJECT"
+                    criteria = []
+                    for i, (key, label) in enumerate(CRITERIA_MAP):
+                        raw = getattr(prog, f"criteria_accept{i + 1}")
+                        criteria.append({
+                            "key": key,
+                            "label": label,
+                            "rating": _criteria_to_rating(raw),
+                        })
+
+                    response_record = {
+                        "$type": "app.ch.poltr.review.response",
+                        "argument": argument_uri,
+                        "reviewer": mapped_did,
+                        "criteria": criteria,
+                        "vote": vote,
+                        "createdAt": _format_datetime(prog.date_responded),
+                    }
+
+                    if self._put_record("app.ch.poltr.review.response", rkey, response_record):
+                        responses_created += 1
+                    else:
+                        failed += 1
+
+        print()
+        print("=" * 50)
+        print(f"Invitations created: {invitations_created}")
+        print(f"Responses created:   {responses_created}")
+        print(f"Skipped (no arg):    {skipped_no_argument}")
+        print(f"Failed:              {failed}")
+        if self.dry_run:
+            print("(DRY RUN — no records were written)")
+        print("=" * 50)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    pds_host = os.getenv("PDS_HOST", "http://localhost:2583")
+    gov_handle = os.getenv("GOV_HANDLE", "")
+    gov_password = os.getenv("GOV_PASSWORD", "")
+    ballot_uri = os.getenv("BALLOT_URI", "")
+    dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
+    peerreview_path = os.getenv("PEERREVIEW_XLSX", "dump/content_peerreview.xlsx")
+    progression_path = os.getenv("PROGRESSION_XLSX", "dump/content_peerreview_progression.xlsx")
+
+    if not gov_handle or not gov_password:
+        print("ERROR: GOV_HANDLE and GOV_PASSWORD required")
+        sys.exit(1)
+
+    if not ballot_uri:
+        print("ERROR: BALLOT_URI required (AT URI of the ballot)")
+        print("  e.g. BALLOT_URI='at://did:plc:.../app.ch.poltr.ballot.entry/663'")
+        sys.exit(1)
+
+    print("=== AT Protocol Peer Review Import ===")
+    print(f"PDS Host:        {pds_host}")
+    print(f"Gov Handle:      {gov_handle}")
+    print(f"Ballot URI:      {ballot_uri}")
+    print(f"Dry Run:         {dry_run}")
+    print(f"Peerreview XLSX: {peerreview_path}")
+    print(f"Progression XLSX:{progression_path}")
+    print()
+
+    importer = PeerReviewImporter(pds_host, gov_handle, gov_password,
+                                  ballot_uri, dry_run)
+
+    if not importer.authenticate():
+        sys.exit(1)
+
+    if not importer.discover_users():
+        sys.exit(1)
+
+    importer.scan_existing_arguments()
+
+    print()
+    importer.import_from_xlsx(peerreview_path, progression_path)
+
+
+if __name__ == "__main__":
+    main()

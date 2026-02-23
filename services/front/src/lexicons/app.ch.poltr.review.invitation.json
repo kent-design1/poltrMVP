@@ -5,7 +5,7 @@
     "main": {
       "type": "record",
       "description": "An invitation for a user to peer-review a specific argument",
-      "key": "tid",
+      "key": "any",
       "record": {
         "type": "object",
         "properties": {

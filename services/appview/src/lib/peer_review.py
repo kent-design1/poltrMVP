@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import httpx
 
 from src.lib.db import get_pool
-from src.lib.governance_pds import create_governance_record
+from src.lib.governance_pds import create_governance_record, put_governance_record, compose_review_rkey
 
 logger = logging.getLogger("peer_review")
 
@@ -183,6 +183,7 @@ async def _invite_for_argument(
             continue
 
         user_did = user_row["did"]
+        rkey = compose_review_rkey(argument_uri, user_did)
         invitation_record = {
             "$type": "app.ch.poltr.review.invitation",
             "argument": argument_uri,
@@ -191,8 +192,8 @@ async def _invite_for_argument(
         }
 
         try:
-            result = await create_governance_record(
-                client, "app.ch.poltr.review.invitation", invitation_record
+            result = await put_governance_record(
+                client, "app.ch.poltr.review.invitation", rkey, invitation_record
             )
             logger.info(f"Invited {user_did} to review {argument_uri}: {result.get('uri')}")
             invited_count += 1
