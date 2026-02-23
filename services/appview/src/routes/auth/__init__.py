@@ -156,6 +156,18 @@ async def confirm_registration(request: Request, data: VerifyRegistrationMagicLi
     return await create_account(user_email=response)
 
 
+@router.get("/ch.poltr.auth.session")
+async def check_session(
+    request: Request, session: TSession = Depends(verify_session_token)
+):
+    """Lightweight session validity check. Returns basic user info."""
+    return JSONResponse(content={
+        "authenticated": True,
+        "did": session.did,
+        "handle": session.user_data.get("handle", "") if session.user_data else "",
+    })
+
+
 @router.post("/ch.poltr.auth.createAppPassword")
 @limiter.limit("5/minute")
 async def create_app_password(

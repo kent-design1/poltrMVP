@@ -57,12 +57,26 @@ async function proxyRequest(request: NextRequest, { params }: { params: Promise<
 
   const responseBody = await res.text();
 
-  return new NextResponse(responseBody, {
+  const response = new NextResponse(responseBody, {
     status: res.status,
     headers: {
       'Content-Type': res.headers.get('Content-Type') || 'application/json',
     },
   });
+
+  // If the appview says the session is invalid/expired, clear the cookie
+  // so the frontend stops sending a stale token.
+  if (res.status === 401 && sessionToken) {
+    response.cookies.set('poltr_session', '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+  }
+
+  return response;
 }
 
 export const GET = proxyRequest;

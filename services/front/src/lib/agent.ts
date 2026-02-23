@@ -1,16 +1,23 @@
-import type { BallotWithMetadata, ArgumentWithMetadata, ReviewCriterion, ReviewInvitation, ReviewStatus, ReviewCriterionRating } from '../types/ballots';
+import type { BallotWithMetadata, ArgumentWithMetadata, CommentWithMetadata, ReviewCriterion, ReviewInvitation, ReviewStatus, ReviewCriterionRating } from '../types/ballots';
 import { Agent } from '@atproto/api';
 
 /**
  * Get authenticated fetch handler that routes through Next.js API proxy.
  * The session cookie is sent automatically and forwarded as Bearer token by the proxy.
+ * On 401 responses, dispatches a 'poltr:session-expired' event so the UI can react.
  */
 function getAuthenticatedFetch(): typeof fetch {
   return async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    return fetch(url, {
+    const res = await fetch(url, {
       ...init,
       credentials: 'include',
     });
+
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('poltr:session-expired'));
+    }
+
+    return res;
   };
 }
 
@@ -127,15 +134,66 @@ export async function getBallot(rkey: string): Promise<BallotWithMetadata> {
   return content.ballot;
 }
 
-export async function listArguments(ballotRkey: string): Promise<ArgumentWithMetadata[]> {
+export async function listArguments(
+  ballotRkey: string,
+  sort?: string,
+  type?: string,
+): Promise<ArgumentWithMetadata[]> {
   const authenticatedFetch = getAuthenticatedFetch();
-  const res = await authenticatedFetch(`/api/xrpc/app.ch.poltr.argument.list?ballot_rkey=${encodeURIComponent(ballotRkey)}`);
+  const params = new URLSearchParams({ ballot_rkey: ballotRkey });
+  if (sort) params.set('sort', sort);
+  if (type) params.set('type', type);
+  const res = await authenticatedFetch(`/api/xrpc/app.ch.poltr.argument.list?${params.toString()}`);
   if (!res.ok) throw new Error(await res.text());
   const content = await res.json();
   if (!content?.arguments) {
     throw new Error('Invalid response from argument.list endpoint');
   }
   return content.arguments;
+}
+
+export async function listComments(argumentUri: string): Promise<CommentWithMetadata[]> {
+  const authenticatedFetch = getAuthenticatedFetch();
+  const res = await authenticatedFetch(
+    `/api/xrpc/app.ch.poltr.comment.list?argument_uri=${encodeURIComponent(argumentUri)}`
+  );
+  if (!res.ok) throw new Error(await res.text());
+  const content = await res.json();
+  return content.comments ?? [];
+}
+
+export async function createComment(
+  argumentUri: string,
+  title: string,
+  body: string,
+  parentUri?: string,
+): Promise<{ uri: string; cid: string }> {
+  const authenticatedFetch = getAuthenticatedFetch();
+  const payload: Record<string, string> = { argument: argumentUri, title, body };
+  if (parentUri) payload.parent = parentUri;
+  const res = await authenticatedFetch('/api/xrpc/app.ch.poltr.comment.create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function createArgument(
+  ballotUri: string,
+  title: string,
+  body: string,
+  type: 'PRO' | 'CONTRA',
+): Promise<{ uri: string; cid: string }> {
+  const authenticatedFetch = getAuthenticatedFetch();
+  const res = await authenticatedFetch('/api/xrpc/app.ch.poltr.argument.create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ballot: ballotUri, title, body, type }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function listBallots(_limit = 100): Promise<BallotWithMetadata[]> {

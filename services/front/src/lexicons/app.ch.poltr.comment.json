@@ -16,6 +16,11 @@
             "format": "at-uri",
             "description": "AT URI of the argument this comment refers to"
           },
+          "parent": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the parent comment (for threaded replies)"
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime"

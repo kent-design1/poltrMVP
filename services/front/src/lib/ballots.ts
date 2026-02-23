@@ -90,6 +90,8 @@ export async function likeBallot(
 /**
  * Unlike a ballot. Routes through the appview which deletes from the PDS.
  */
+export const likeContent = likeBallot;
+
 export async function unlikeBallot(likeUri: string): Promise<void> {
   const res = await callAppXrpc('/api/xrpc/app.ch.poltr.content.unrating', {
     method: 'POST',
@@ -102,6 +104,8 @@ export async function unlikeBallot(likeUri: string): Promise<void> {
     throw new Error(`Failed to unlike: ${err}`);
   }
 }
+
+export const unlikeContent = unlikeBallot;
 
 /**
  * Update a ballot record

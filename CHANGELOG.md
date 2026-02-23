@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-02-22
+
+### Argument/Comment Feed View (`services/front`, `services/appview`, `services/indexer`)
+- **Added feed view at `/feed/[id]`** (`services/front/src/app/feed/[id]/page.tsx`): New social-media-style single-column argument feed (max 640px, centered). Each argument renders as a card with colored canton avatar, pseudonym, relative timestamp, PRO/CONTRA pill badge, like toggle with optimistic UI, comment count, and share button. Left accent line (green/red 3px) per argument type
+- **Restored classic view at `/ballots/[id]`**: Original 2-column PRO/CONTRA grid preserved as the default ballot detail page. Added "Feed View" button linking to `/feed/[id]`; feed page has "Classic View" button linking back
+- **Added threaded inline comments**: Comments load lazily below each argument card. Flat API response is threaded client-side via `parentUri`. Shows first 3 top-level comments + 1 nested reply each, with "Show N more" expand. Smaller sizing for comments (28px avatar, 13px text). External Bluesky comments display handle + butterfly badge
+- **Added filter/sort toolbar**: Sticky bar with filter tabs (Alle/Pro/Contra) and sort dropdown (Zufall/Top/Neu/Diskutiert). Re-fetches arguments on change
+- **Added inline reply input**: Collapsed "Write a comment..." text input below each argument's comment thread, expands to textarea + Send on focus. Supports threaded replies via parent URI
+- **Added "Add Argument" modal**: Overlay with PRO/CONTRA toggle, title input, body textarea, submit button. Creates `app.ch.poltr.ballot.argument` record on PDS
+- **Added mobile FAB**: Floating "+" button (bottom-right, brand blue) on screens < 640px, hidden on desktop where toolbar button is shown instead
+- **Enhanced `app.ch.poltr.argument.list` endpoint** (`services/appview/src/routes/poltr/__init__.py`): Added `sort` query param (`random`/`top`/`new`/`discussed`), `type` filter (`PRO`/`CONTRA`), and LEFT JOIN on `app_profiles` to include author `displayName`, `canton`, `color` in response
+- **Added `app.ch.poltr.comment.list` endpoint** (GET): Returns flat comment list for an argument URI with author profile data (intern via `app_profiles` join, extern via stored handle/display_name), viewer like subquery, and `parentUri` for client-side threading
+- **Added `app.ch.poltr.comment.create` endpoint** (POST): Creates comment records on PDS with optional `parent` URI for threaded replies. Validates argument exists
+- **Added `app.ch.poltr.argument.create` endpoint** (POST): Creates argument records on PDS. Validates ballot exists and type is PRO/CONTRA
+- **Fixed `refreshLikeCount`** (`services/indexer/src/db.js`): Now updates `app_arguments.like_count` and `app_comments.like_count` in addition to `app_ballots.like_count` — previously likes on arguments/comments were indexed but counts never persisted
+- **Added `parent_uri` to intern comments** (`services/indexer/src/db.js`): `upsertCommentDb` now reads `record.parent` and stores it in `parent_uri` column, enabling threading for native comments (previously only set for extern Bluesky comments)
+- **Updated comment lexicon** (`services/front/src/lexicons/app.ch.poltr.comment.json`): Added optional `parent` property (AT URI format) for threaded replies
+- **Expanded `ArgumentWithMetadata.author`** (`services/front/src/types/ballots.ts`): Added `displayName?`, `canton?`, `color?` fields
+- **Added `CommentRecord` and `CommentWithMetadata` types** (`services/front/src/types/ballots.ts`)
+- **Enhanced `listArguments()`** (`services/front/src/lib/agent.ts`): Added `sort` and `type` params
+- **Added API functions** (`services/front/src/lib/agent.ts`): `listComments()`, `createComment()`, `createArgument()`
+- **Added `likeContent`/`unlikeContent` aliases** (`services/front/src/lib/ballots.ts`): Aliases for `likeBallot`/`unlikeBallot` (underlying API already accepts any subject URI)
+- **Added `formatRelativeTime()`** (`services/front/src/lib/utils.ts`): Returns "jetzt", "5min", "2h", "3d", or falls back to `formatDate()` for older items
+
 ## 2026-02-21
 
 ### Comments on Arguments (`services/front`, `services/indexer`, `infra/scripts`)

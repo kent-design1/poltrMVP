@@ -46,6 +46,24 @@ export function generateRandomString(length: number): string {
 }
 
 
+export const formatRelativeTime = (isoDate: string): string => {
+  try {
+    const now = Date.now();
+    const then = new Date(isoDate).getTime();
+    const diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return 'jetzt';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}min`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `${diffH}h`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 30) return `${diffD}d`;
+    return formatDate(isoDate);
+  } catch {
+    return isoDate;
+  }
+};
+
 export const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('de-CH', {

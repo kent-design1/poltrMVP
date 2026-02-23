@@ -323,6 +323,7 @@ export async function upsertCommentDb(clientOrPool, params) {
   const body = record.body ?? null;
   const argumentUri = record.argument ?? null;
   const argumentRkey = argumentUri ? argumentUri.split("/").pop() : null;
+  const parentUri = record.parent ?? null;
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
 
   // Derive ballot info from the argument
@@ -345,22 +346,23 @@ export async function upsertCommentDb(clientOrPool, params) {
     `
     INSERT INTO app_comments
       (uri, cid, did, rkey, origin, title, text, ballot_uri, ballot_rkey,
-       argument_uri, created_at, deleted)
+       parent_uri, argument_uri, created_at, deleted)
     VALUES
       ($1,  $2,  $3,  $4,  'intern', $5,  $6,  $7,         $8,
-       $9,  $10, false)
+       $9, $10,  $11, false)
     ON CONFLICT (uri) DO UPDATE SET
       cid          = EXCLUDED.cid,
       title        = EXCLUDED.title,
       text         = EXCLUDED.text,
       ballot_uri   = EXCLUDED.ballot_uri,
       ballot_rkey  = EXCLUDED.ballot_rkey,
+      parent_uri   = EXCLUDED.parent_uri,
       argument_uri = EXCLUDED.argument_uri,
       created_at   = EXCLUDED.created_at,
       deleted      = false,
       indexed_at   = now()
     `,
-    [uri, cid, did, rkey, title, body, ballotUri, ballotRkey, argumentUri, createdAt],
+    [uri, cid, did, rkey, title, body, ballotUri, ballotRkey, parentUri, argumentUri, createdAt],
   );
 
   if (argumentUri) {
@@ -448,16 +450,20 @@ async function refreshBallotCommentCount(clientOrPool, ballotUri) {
 }
 
 export async function refreshLikeCount(clientOrPool, subjectUri) {
+  const countSql = `(SELECT count(*) FROM app_likes WHERE subject_uri = $1 AND NOT deleted)`;
   await dbQuery(
     clientOrPool,
-    `
-    UPDATE app_ballots
-    SET like_count = (
-      SELECT count(*) FROM app_likes
-      WHERE subject_uri = $1 AND NOT deleted
-    )
-    WHERE uri = $1
-    `,
+    `UPDATE app_ballots SET like_count = ${countSql} WHERE uri = $1`,
+    [subjectUri],
+  );
+  await dbQuery(
+    clientOrPool,
+    `UPDATE app_arguments SET like_count = ${countSql} WHERE uri = $1`,
+    [subjectUri],
+  );
+  await dbQuery(
+    clientOrPool,
+    `UPDATE app_comments SET like_count = ${countSql} WHERE uri = $1`,
     [subjectUri],
   );
 }

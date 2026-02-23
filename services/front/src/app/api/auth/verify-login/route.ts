@@ -17,17 +17,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, { status: res.status });
   }
 
-  const { session_token, ...rest } = data;
+  const { session_token, expires_at, ...rest } = data;
 
   const response = NextResponse.json(rest);
 
   if (session_token) {
+    // Derive cookie maxAge from appview's expires_at (single source of truth)
+    const maxAge = expires_at
+      ? Math.floor((new Date(expires_at).getTime() - Date.now()) / 1000)
+      : 7 * 24 * 60 * 60;
+
     response.cookies.set('poltr_session', session_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 30 * 24 * 60 * 60, // 30 days
+      maxAge,
     });
   }
 

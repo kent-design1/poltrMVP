@@ -129,6 +129,20 @@ export default function BallotDetail() {
               &#8592; Back to Ballots
             </button>
             <button
+              onClick={() => router.push(`/feed/${id}`)}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                backgroundColor: '#00897b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Feed View
+            </button>
+            <button
               onClick={() => router.push('/review')}
               style={{
                 padding: '10px 20px',

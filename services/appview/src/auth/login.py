@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from fastapi.responses import JSONResponse, RedirectResponse
 import src.lib.db as db
 from datetime import datetime, timezone
+
+SESSION_LIFETIME_DAYS = int(os.getenv("SESSION_LIFETIME_DAYS", "7"))
 from src.lib.atproto_api import (
     TCreateAccountResponse,
     TLoginAccountResponse,
@@ -314,7 +316,7 @@ async def create_session_cookie(
     """Helper to set session cookie on response"""
 
     session_token = secrets.token_urlsafe(48)
-    session_expires = datetime.utcnow() + timedelta(days=7)
+    session_expires = datetime.utcnow() + timedelta(days=SESSION_LIFETIME_DAYS)
 
     # # create session like verify_magic_link_handler does
     user_data = {
@@ -357,7 +359,7 @@ async def create_session_cookie(
         httponly=True,
         secure=is_production,  # Only send over HTTPS in production
         samesite="lax",
-        max_age=7 * 24 * 60 * 60,  # 7 days in seconds
+        max_age=SESSION_LIFETIME_DAYS * 24 * 60 * 60,
         path="/",
     )
 

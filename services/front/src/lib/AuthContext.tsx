@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Verify session cookie is still valid
+    // Verify session cookie is still valid against the appview
     fetch('/api/auth/session')
       .then((res) => res.json())
       .then((data) => {
@@ -51,6 +51,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         setLoading(false);
       });
+
+    // Listen for session expiry from API calls (e.g. 401 from XRPC proxy)
+    const handleSessionExpired = () => {
+      setUser(null);
+      localStorage.removeItem('poltr_user');
+    };
+    window.addEventListener('poltr:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('poltr:session-expired', handleSessionExpired);
   }, []);
 
   const login = (user: User) => {

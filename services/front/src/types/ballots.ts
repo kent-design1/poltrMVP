@@ -26,6 +26,9 @@ export interface ArgumentWithMetadata {
   record: ArgumentRecord;
   author: {
     did: string;
+    displayName?: string;
+    canton?: string;
+    color?: string;
   };
   likeCount?: number;
   commentCount?: number;
@@ -34,6 +37,37 @@ export interface ArgumentWithMetadata {
   viewer?: {
     like?: string;
   };
+}
+
+export interface CommentRecord {
+  $type: 'app.ch.poltr.comment';
+  title: string;
+  body: string;
+  argument: string;
+  parent?: string;
+  createdAt?: string;
+}
+
+export interface CommentWithMetadata {
+  uri: string;
+  cid: string;
+  record: CommentRecord;
+  author: {
+    did: string;
+    displayName?: string;
+    canton?: string;
+    color?: string;
+    handle?: string;
+  };
+  origin: 'intern' | 'extern';
+  parentUri?: string;
+  argumentUri: string;
+  likeCount?: number;
+  indexedAt?: string;
+  viewer?: {
+    like?: string;
+  };
+  replies?: CommentWithMetadata[];
 }
 
 export interface ReviewCriterion {

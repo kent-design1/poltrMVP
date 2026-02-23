@@ -240,6 +240,8 @@ async def get_ballot(
 async def list_arguments(
     request: Request,
     ballot_rkey: str = Query(...),
+    sort: str = Query("random"),
+    type: Optional[str] = Query(None),
     limit: int = Query(100),
     session: TSession = Depends(verify_session_token),
 ):
@@ -248,6 +250,12 @@ async def list_arguments(
 
     viewer_did = session.did if session else None
     peer_review_on = os.getenv("PEER_REVIEW_ENABLED", "false").lower() == "true"
+
+    # Type filter
+    type_filter = ""
+    if type in ("PRO", "CONTRA"):
+        params.append(type)
+        type_filter = f"AND a.type = ${len(params)}"
 
     # Filter: when peer review is enabled, show approved + preliminary;
     # show rejected only to the author. When disabled, show all.
@@ -271,13 +279,28 @@ async def list_arguments(
         else:
             review_filter = ""
 
+    # Sort order
+    sort_map = {
+        "top": "a.like_count DESC",
+        "new": "a.created_at DESC",
+        "discussed": "a.comment_count DESC",
+        "random": "RANDOM()",
+    }
+    order_by = sort_map.get(sort, "RANDOM()")
+
     params.append(limit)
     sql = f"""
-        SELECT a.*{viewer_select}
+        SELECT a.*,
+               p.display_name AS author_display_name,
+               p.canton AS author_canton,
+               p.color AS author_color
+               {viewer_select}
         FROM app_arguments a
+        LEFT JOIN app_profiles p ON p.did = a.did
         WHERE a.ballot_rkey = $1 AND NOT a.deleted
+          {type_filter}
           {review_filter}
-        ORDER BY a.type ASC, a.created_at ASC
+        ORDER BY {order_by}
         LIMIT ${len(params)};
     """
 
@@ -304,11 +327,19 @@ async def list_arguments(
             if row.get("viewer_like"):
                 viewer_obj["like"] = row["viewer_like"]
 
+            author_raw = {
+                "did": get_string(row, "did") or "",
+                "displayName": get_string(row, "author_display_name"),
+                "canton": get_string(row, "author_canton"),
+                "color": get_string(row, "author_color"),
+            }
+            author = {k: v for k, v in author_raw.items() if v is not None}
+
             arg_raw = {
                 "uri": get_string(row, "uri") or "",
                 "cid": get_string(row, "cid") or "",
                 "record": record,
-                "author": {"did": get_string(row, "did") or ""},
+                "author": author,
                 "likeCount": get_number(row, "like_count"),
                 "commentCount": get_number(row, "comment_count"),
                 "reviewStatus": get_string(row, "review_status") if peer_review_on else None,
@@ -324,6 +355,250 @@ async def list_arguments(
         return JSONResponse(
             status_code=500, content={"error": "internal_error", "details": str(err)}
         )
+
+
+# -----------------------------------------------------------------------------
+# app.ch.poltr.comment.list
+# -----------------------------------------------------------------------------
+
+
+@router.get("/app.ch.poltr.comment.list")
+async def list_comments(
+    request: Request,
+    argument_uri: str = Query(...),
+    limit: int = Query(50),
+    session: TSession = Depends(verify_session_token),
+):
+    """List comments for an argument."""
+    params = [argument_uri]
+
+    viewer_did = session.did if session else None
+    if viewer_did:
+        params.append(viewer_did)
+        viewer_param = f"${len(params)}"
+        viewer_select = f""",
+            (
+                SELECT uri FROM app_likes
+                WHERE subject_uri = c.uri AND did = {viewer_param} AND NOT deleted
+                LIMIT 1
+            ) AS viewer_like"""
+    else:
+        viewer_select = ",\n            NULL AS viewer_like"
+
+    params.append(limit)
+    sql = f"""
+        SELECT c.*,
+               p.display_name AS profile_display_name,
+               p.canton AS profile_canton,
+               p.color AS profile_color
+               {viewer_select}
+        FROM app_comments c
+        LEFT JOIN app_profiles p ON p.did = c.did
+        WHERE c.argument_uri = $1 AND NOT c.deleted
+        ORDER BY c.like_count DESC, c.created_at ASC
+        LIMIT ${len(params)};
+    """
+
+    try:
+        db_pool = await get_pool()
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+
+        comments = []
+        for r in rows:
+            row = dict(r)
+            origin = get_string(row, "origin") or "intern"
+
+            if origin == "extern":
+                author_raw = {
+                    "did": get_string(row, "did") or "",
+                    "handle": get_string(row, "handle"),
+                    "displayName": get_string(row, "display_name"),
+                }
+            else:
+                author_raw = {
+                    "did": get_string(row, "did") or "",
+                    "displayName": get_string(row, "profile_display_name"),
+                    "canton": get_string(row, "profile_canton"),
+                    "color": get_string(row, "profile_color"),
+                }
+            author = {k: v for k, v in author_raw.items() if v is not None}
+
+            viewer_obj = {}
+            if row.get("viewer_like"):
+                viewer_obj["like"] = row["viewer_like"]
+
+            comment_raw = {
+                "uri": get_string(row, "uri") or "",
+                "cid": get_string(row, "cid") or "",
+                "record": {
+                    "$type": "app.ch.poltr.comment",
+                    "title": get_string(row, "title") or "",
+                    "body": get_string(row, "text") or "",
+                    "argument": get_string(row, "argument_uri") or "",
+                    "createdAt": get_date_iso(row, "created_at"),
+                },
+                "author": author,
+                "origin": origin,
+                "parentUri": get_string(row, "parent_uri"),
+                "argumentUri": get_string(row, "argument_uri") or "",
+                "likeCount": get_number(row, "like_count"),
+                "indexedAt": get_date_iso(row, "indexed_at"),
+                "viewer": viewer_obj if viewer_obj else None,
+            }
+            comment = {k: v for k, v in comment_raw.items() if v is not None}
+            comments.append(comment)
+
+        return JSONResponse(status_code=200, content={"comments": comments})
+    except Exception as err:
+        logger.error(f"DB query failed: {err}")
+        return JSONResponse(
+            status_code=500, content={"error": "internal_error", "details": str(err)}
+        )
+
+
+# -----------------------------------------------------------------------------
+# app.ch.poltr.comment.create
+# -----------------------------------------------------------------------------
+
+
+@router.post("/app.ch.poltr.comment.create")
+async def create_comment(
+    request: Request,
+    session: TSession = Depends(verify_session_token),
+):
+    """Create a comment record on the PDS."""
+    body = await request.json()
+    argument_uri = body.get("argument")
+    title = body.get("title", "")
+    comment_body = body.get("body", "")
+    parent_uri = body.get("parent")
+
+    if not argument_uri:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "argument URI required"},
+        )
+    if not comment_body:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "body required"},
+        )
+
+    # Validate argument exists
+    try:
+        db_pool = await get_pool()
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT uri FROM app_arguments WHERE uri = $1 AND NOT deleted",
+                argument_uri,
+            )
+        if not row:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "not_found", "message": "Argument not found"},
+            )
+    except Exception as err:
+        logger.error(f"DB lookup failed: {err}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "details": str(err)},
+        )
+
+    record = {
+        "$type": "app.ch.poltr.comment",
+        "title": title,
+        "body": comment_body,
+        "argument": argument_uri,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    if parent_uri:
+        record["parent"] = parent_uri
+
+    try:
+        result = await pds_create_record(session, "app.ch.poltr.comment", record)
+    except Exception as err:
+        logger.error(f"Failed to create comment: {err}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "pds_error", "message": str(err)},
+        )
+
+    return JSONResponse(status_code=200, content=result)
+
+
+# -----------------------------------------------------------------------------
+# app.ch.poltr.argument.create
+# -----------------------------------------------------------------------------
+
+
+@router.post("/app.ch.poltr.argument.create")
+async def create_argument(
+    request: Request,
+    session: TSession = Depends(verify_session_token),
+):
+    """Create an argument record on the PDS."""
+    body = await request.json()
+    ballot_uri = body.get("ballot")
+    title = body.get("title", "")
+    arg_body = body.get("body", "")
+    arg_type = body.get("type")
+
+    if not ballot_uri:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "ballot URI required"},
+        )
+    if arg_type not in ("PRO", "CONTRA"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "type must be PRO or CONTRA"},
+        )
+    if not title or not arg_body:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "title and body required"},
+        )
+
+    # Validate ballot exists
+    try:
+        db_pool = await get_pool()
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT uri FROM app_ballots WHERE uri = $1 AND NOT deleted",
+                ballot_uri,
+            )
+        if not row:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "not_found", "message": "Ballot not found"},
+            )
+    except Exception as err:
+        logger.error(f"DB lookup failed: {err}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "details": str(err)},
+        )
+
+    record = {
+        "$type": "app.ch.poltr.ballot.argument",
+        "title": title,
+        "body": arg_body,
+        "type": arg_type,
+        "ballot": ballot_uri,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        result = await pds_create_record(session, "app.ch.poltr.ballot.argument", record)
+    except Exception as err:
+        logger.error(f"Failed to create argument: {err}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "pds_error", "message": str(err)},
+        )
+
+    return JSONResponse(status_code=200, content=result)
 
 
 # -----------------------------------------------------------------------------
