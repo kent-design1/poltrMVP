@@ -215,27 +215,27 @@ async def create_account(user_email: str) -> JSONResponse | RedirectResponse:
         logger.debug(f"........profile set (commit rev: {profile_commit_rev}), now writing pseudonym record to PDS")
 
         # Write pseudonym record to PDS
-        # pseudonym_record = {
-        #     "$type": "app.ch.poltr.actor.pseudonym",
-        #     "displayName": pseudonym["displayName"],
-        #     "mountainName": pseudonym["mountainName"],
-        #     "canton": pseudonym["canton"],
-        #     "height": pseudonym["height"],
-        #     "color": pseudonym["color"],
-        #     "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        # }
-        # if pseudonym.get("mountainFullname"):
-        #     pseudonym_record["mountainFullname"] = pseudonym["mountainFullname"]
+        pseudonym_record = {
+            "$type": "app.ch.poltr.actor.pseudonym",
+            "displayName": pseudonym["displayName"],
+            "mountainName": pseudonym["mountainName"],
+            "canton": pseudonym["canton"],
+            "height": int(pseudonym["height"]),
+            "color": pseudonym["color"],
+            "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        }
+        if pseudonym.get("mountainFullname"):
+            pseudonym_record["mountainFullname"] = pseudonym["mountainFullname"]
 
-        # logger.debug(f"Pseudonym record payload: {pseudonym_record}")
+        logger.debug(f"Pseudonym record payload: {pseudonym_record}")
 
-        # await pds_put_record(
-        #     user_session.accessJwt,
-        #     user_session.did,
-        #     "app.ch.poltr.actor.pseudonym",
-        #     "self",
-        #     pseudonym_record,
-        # )
+        await pds_put_record(
+            user_session.accessJwt,
+            user_session.did,
+            "app.ch.poltr.actor.pseudonym",
+            "self",
+            pseudonym_record,
+        )
 
         # Ask relay to crawl our PDS so the new profile is visible on Bluesky
         await relay_request_crawl()

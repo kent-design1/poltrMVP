@@ -14,7 +14,7 @@
           "mountainName": { "type": "string", "description": "Mountain name from template" },
           "mountainFullname": { "type": "string", "description": "Full official mountain name" },
           "canton": { "type": "string", "description": "Swiss canton abbreviation e.g. 'BE'" },
-          "height": { "type": "number", "description": "Mountain height in meters" },
+          "height": { "type": "integer", "description": "Mountain height in meters (rounded)" },
           "color": { "type": "string", "description": "Hex color for avatar e.g. '#a3b2c1'" },
           "createdAt": { "type": "string", "format": "datetime" }
         }

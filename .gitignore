@@ -37,3 +37,7 @@ infra/openstack/
 
 # Infomaniak API token
 infomaniak-api-token.txt
+
+
+*/__pycache__
+__pycache__

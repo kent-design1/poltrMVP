@@ -3,10 +3,16 @@
 Import COMMENT entries from the Demokratiefabrik content.xlsx dump
 into AT Protocol as app.ch.poltr.comment records.
 
-Comments are attached to existing arguments (parent_id in xlsx = argument rkey).
-They are assigned to random non-admin PDS users to simulate real platform
-behaviour.  Authenticates using stored app passwords from the
-auth.auth_creds table (same as the indexer) so credentials stay intact.
+Supports both root comments (parent_id references an argument) and nested
+replies (parent_id references another comment).  Nested replies walk up the
+parent chain to resolve the root argument URI, and set the `parent` field to
+the direct parent comment's AT-URI.  Comments are topologically sorted so
+parents are always created before their children.
+
+Comments are assigned to random non-admin PDS users (excluding the parent
+comment's author for nested replies).  Authenticates using stored app
+passwords from the auth.auth_creds table (same as the indexer) so
+credentials stay intact.
 
 Environment variables:
   PDS_HOST                          PDS endpoint (default: http://localhost:2583)
@@ -226,8 +232,10 @@ class CommentImporter:
             print(f"  ERROR: Failed to create session for {user.handle} - {e}")
             return False
 
-    def create_comment(self, comment: Comment, user: PdsUser, argument_uri: str) -> bool:
-        """Create or update a comment record on the PDS as the given user."""
+    def create_comment(self, comment: Comment, user: PdsUser, argument_uri: str,
+                       parent_uri: Optional[str] = None) -> Optional[str]:
+        """Create or update a comment record on the PDS as the given user.
+        Returns the AT-URI of the created record, or None on failure."""
         rkey = str(comment.id)
 
         record = {
@@ -237,6 +245,8 @@ class CommentImporter:
             "argument": argument_uri,
             "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "Z",
         }
+        if parent_uri:
+            record["parent"] = parent_uri
 
         url = f"{self.pds_host}/xrpc/com.atproto.repo.putRecord"
         headers = {
@@ -258,8 +268,9 @@ class CommentImporter:
                 data = response.json()
                 if "uri" in data:
                     arg_rkey = argument_uri.split("/")[-1]
-                    print(f"  Synced by {user.handle}: {comment.title[:40]} -> {data['uri']} (arg:{arg_rkey})")
-                    return True
+                    parent_info = f" (parent:{parent_uri.split('/')[-1]})" if parent_uri else ""
+                    print(f"  Synced by {user.handle}: {comment.title[:40]} -> {data['uri']} (arg:{arg_rkey}){parent_info}")
+                    return data["uri"]
 
             try:
                 error_data = response.json()
@@ -268,11 +279,50 @@ class CommentImporter:
             except Exception:
                 print(f"  Failed ({response.status_code}): {response.text[:200]}")
 
-            return False
+            return None
 
         except requests.exceptions.RequestException as e:
             print(f"  Failed: {e}")
-            return False
+            return None
+
+    def _resolve_argument_uri(self, comment_id: int, all_comments: dict[int, Comment]) -> Optional[str]:
+        """Walk up the parent_id chain from a comment until an argument is found.
+        Returns the argument AT-URI, or None if the chain is broken."""
+        visited: set[int] = set()
+        current = comment_id
+        while current in all_comments:
+            if current in visited:
+                return None  # cycle detected
+            visited.add(current)
+            parent_id = all_comments[current].parent_id
+            parent_rkey = str(parent_id)
+            if parent_rkey in self.argument_rkey_to_uri:
+                return self.argument_rkey_to_uri[parent_rkey]
+            current = parent_id
+        return None
+
+    def _topological_sort(self, comment_ids: list[int], all_comments: dict[int, Comment]) -> list[int]:
+        """Sort comments so parents come before children."""
+        comment_id_set = set(comment_ids)
+        # Build adjacency: parent -> children
+        children: dict[int, list[int]] = {cid: [] for cid in comment_ids}
+        in_degree: dict[int, int] = {cid: 0 for cid in comment_ids}
+        for cid in comment_ids:
+            pid = all_comments[cid].parent_id
+            if pid in comment_id_set:
+                children[pid].append(cid)
+                in_degree[cid] += 1
+        # Kahn's algorithm
+        queue = [cid for cid in comment_ids if in_degree[cid] == 0]
+        result = []
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+            for child in children[node]:
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    queue.append(child)
+        return result
 
     def import_from_xlsx(self, xlsx_path: str, max_imports: int = 1):
         """Read COMMENT entries from xlsx and import them as random users."""
@@ -282,8 +332,9 @@ class CommentImporter:
         ws = wb[wb.sheetnames[0]]
 
         headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
-        comments = []
 
+        # Pass 1: Read ALL comment rows into a dict keyed by id
+        all_comments: dict[int, Comment] = {}
         for row in ws.iter_rows(min_row=2, values_only=True):
             d = dict(zip(headers, row))
             if d.get("type") != "COMMENT":
@@ -295,35 +346,79 @@ class CommentImporter:
             if parent_id is None:
                 continue
 
-            parent_rkey = str(int(parent_id))
-            if parent_rkey not in self.argument_rkey_to_uri:
-                continue
-
             title = (d.get("title") or "").strip()
             body = (d.get("text") or "").strip()
             if not body:
                 continue
 
-            comments.append(Comment(
-                id=d.get("id"),
+            cid = int(d.get("id"))
+            all_comments[cid] = Comment(
+                id=cid,
                 parent_id=int(parent_id),
                 title=title,
                 body=body,
                 date_created=str(d.get("date_created", "")),
-            ))
+            )
 
         wb.close()
-        print(f"Found {len(comments)} valid comments for this ballot's arguments")
+
+        # Pass 2: Classify each comment
+        root_comments: list[int] = []      # parent_id -> argument
+        nested_comments: list[int] = []    # parent_id -> another comment
+        skipped = 0
+
+        for cid, comment in all_comments.items():
+            parent_rkey = str(comment.parent_id)
+            if parent_rkey in self.argument_rkey_to_uri:
+                root_comments.append(cid)
+            elif comment.parent_id in all_comments:
+                nested_comments.append(cid)
+            else:
+                skipped += 1
+
+        # For nested comments, resolve the argument URI by walking up the chain
+        # Filter out any whose chain doesn't reach an argument
+        valid_nested: list[int] = []
+        for cid in nested_comments:
+            arg_uri = self._resolve_argument_uri(cid, all_comments)
+            if arg_uri:
+                valid_nested.append(cid)
+            else:
+                skipped += 1
+
+        all_importable = root_comments + valid_nested
+        print(f"Found {len(root_comments)} root comment(s), {len(valid_nested)} nested reply/replies, {skipped} orphan(s) skipped")
+
+        # Topological sort so parents are created before children
+        sorted_ids = self._topological_sort(all_importable, all_comments)
 
         created = 0
         failed = 0
-        limit = max_imports if max_imports > 0 else len(comments)
+        limit = max_imports if max_imports > 0 else len(sorted_ids)
 
-        for comment in comments[:limit]:
+        # Track created comment URIs and assigned authors
+        comment_id_to_uri: dict[int, str] = {}
+        comment_id_to_did: dict[int, str] = {}
+
+        for cid in sorted_ids[:limit]:
+            comment = all_comments[cid]
             rkey = str(comment.id)
-            existing_did = self.existing_comment_rkey_to_did.get(rkey)
-            argument_uri = self.argument_rkey_to_uri[str(comment.parent_id)]
+            parent_rkey = str(comment.parent_id)
 
+            # Determine argument URI and parent URI
+            if parent_rkey in self.argument_rkey_to_uri:
+                argument_uri = self.argument_rkey_to_uri[parent_rkey]
+                parent_uri = None
+            else:
+                argument_uri = self._resolve_argument_uri(cid, all_comments)
+                parent_uri = comment_id_to_uri.get(comment.parent_id)
+                if not parent_uri:
+                    print(f"  WARNING: Parent comment {comment.parent_id} not yet created for comment {cid}, skipping")
+                    failed += 1
+                    continue
+
+            # Pick user: reuse existing, or random (excluding parent's author for nested)
+            existing_did = self.existing_comment_rkey_to_did.get(rkey)
             if existing_did:
                 user = self._get_user_by_did(existing_did)
                 if not user:
@@ -332,20 +427,27 @@ class CommentImporter:
                 else:
                     print(f"  Reusing existing account {user.handle} for rkey={rkey}")
             else:
-                user = random.choice(self.users)
+                parent_author_did = comment_id_to_did.get(comment.parent_id)
+                candidates = [u for u in self.users if u.did != parent_author_did] if parent_author_did else self.users
+                if not candidates:
+                    candidates = self.users  # fallback if only one user
+                user = random.choice(candidates)
 
             if not self.authenticate_user(user):
                 failed += 1
                 continue
 
-            if self.create_comment(comment, user, argument_uri):
+            uri = self.create_comment(comment, user, argument_uri, parent_uri=parent_uri)
+            if uri:
+                comment_id_to_uri[cid] = uri
+                comment_id_to_did[cid] = user.did
                 created += 1
             else:
                 failed += 1
 
         print()
         print("=" * 42)
-        print(f"Imported: {created}, Failed: {failed}")
+        print(f"Imported: {created} ({len(root_comments)} root + {created - len([c for c in root_comments if c in comment_id_to_uri]) if created else 0} nested), Failed: {failed}")
         print("=" * 42)
 
 
