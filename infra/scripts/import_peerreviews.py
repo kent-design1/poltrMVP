@@ -16,6 +16,7 @@ Environment variables:
   GOV_HANDLE      Governance account handle (for session creation)
   GOV_PASSWORD    Governance account password
   BALLOT_URI      AT URI of the ballot to scope arguments to
+  MAX_RESPONSES   Max number of responses to import (default: 0 = all)
   DRY_RUN         Set to "true" to inspect records without writing (default: false)
   PEERREVIEW_XLSX Path to content_peerreview.xlsx (default: dump/content_peerreview.xlsx)
   PROGRESSION_XLSX Path to content_peerreview_progression.xlsx
@@ -113,12 +114,13 @@ def _criteria_to_rating(val: Optional[int]) -> int:
 
 class PeerReviewImporter:
     def __init__(self, pds_host: str, gov_handle: str, gov_password: str,
-                 ballot_uri: str, dry_run: bool = False):
+                 ballot_uri: str, dry_run: bool = False, max_responses: int = 0):
         self.pds_host = pds_host
         self.gov_handle = gov_handle
         self.gov_password = gov_password
         self.ballot_uri = ballot_uri
         self.dry_run = dry_run
+        self.max_responses = max_responses
         self.gov_did: Optional[str] = None
         self.access_token: Optional[str] = None
         self.users: list[PdsUser] = []
@@ -317,7 +319,13 @@ class PeerReviewImporter:
         skipped_no_argument = 0
         failed = 0
 
+        limit = self.max_responses if self.max_responses > 0 else None
+
         for pr_id, pr in sorted(peerreviews.items()):
+            if limit and responses_created >= limit:
+                print(f"\n  Reached MAX_RESPONSES={limit}, stopping")
+                break
+
             argument_uri = self.content_id_to_argument_uri.get(pr.content_id)
             if not argument_uri:
                 skipped_no_argument += 1
@@ -331,6 +339,8 @@ class PeerReviewImporter:
             print(f"\n  Peer review #{pr_id} for content_id={pr.content_id} ({len(progs)} progressions)")
 
             for prog in progs:
+                if limit and responses_created >= limit:
+                    break
                 mapped_did = self._map_user_id_to_did(prog.user_id)
                 did_suffix = mapped_did.split(":")[-1]
                 rkey = f"{arg_rkey}-{did_suffix}"
@@ -395,6 +405,7 @@ def main():
     gov_handle = os.getenv("GOV_HANDLE", "")
     gov_password = os.getenv("GOV_PASSWORD", "")
     ballot_uri = os.getenv("BALLOT_URI", "")
+    max_responses = int(os.getenv("MAX_RESPONSES", "0"))
     dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
     peerreview_path = os.getenv("PEERREVIEW_XLSX", "dump/content_peerreview.xlsx")
     progression_path = os.getenv("PROGRESSION_XLSX", "dump/content_peerreview_progression.xlsx")
@@ -412,13 +423,14 @@ def main():
     print(f"PDS Host:        {pds_host}")
     print(f"Gov Handle:      {gov_handle}")
     print(f"Ballot URI:      {ballot_uri}")
+    print(f"Max Responses:   {max_responses if max_responses > 0 else 'all'}")
     print(f"Dry Run:         {dry_run}")
     print(f"Peerreview XLSX: {peerreview_path}")
     print(f"Progression XLSX:{progression_path}")
     print()
 
     importer = PeerReviewImporter(pds_host, gov_handle, gov_password,
-                                  ballot_uri, dry_run)
+                                  ballot_uri, dry_run, max_responses)
 
     if not importer.authenticate():
         sys.exit(1)

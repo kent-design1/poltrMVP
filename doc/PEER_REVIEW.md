@@ -150,7 +150,21 @@ Storing reviews in the governance PDS (not the reviewer's PDS) ensures:
 
 ### Access Control
 
-The appview enforces that only invited users can submit a review. When a user attempts to submit, the appview checks `app_review_invitations` for a matching record. Uninvited or already-reviewed submissions are rejected.
+The appview enforces that only invited users can submit a review. When a user attempts to submit, the appview checks `app_review_invitations` for a matching record. Uninvited submissions are rejected.
+
+### Duplicate Prevention
+
+Duplicate invitations and responses are prevented **structurally at the PDS level** using composed rkeys and `putRecord` (upsert).
+
+**Rkey format:** `{argument_rkey}-{did_suffix}`
+
+- `argument_rkey` — the rkey portion of the argument's AT URI (e.g. `7028`)
+- `did_suffix` — the part after `did:plc:` of the invitee/reviewer DID (e.g. `3ch7iwf6od4szklpolupbv7o`)
+- **Example:** `7028-3ch7iwf6od4szklpolupbv7o`
+
+Since invitations and responses live in **different collections**, the same rkey format works for both. Using `putRecord` instead of `createRecord` means writing a second invitation/response for the same (argument, user) pair just overwrites the existing record — duplicates are impossible regardless of race conditions or retries.
+
+The appview also retains a DB-level duplicate check (`SELECT ... FROM app_review_responses`) as a fast-path guard, but it is no longer the sole line of defense.
 
 ---
 
@@ -242,7 +256,7 @@ An invitation for a user to review a specific argument.
 | invitee | string (did) | yes | DID of the invited reviewer |
 | createdAt | string (datetime) | yes | Timestamp of invitation |
 
-- **Key:** `tid`
+- **Key:** `any` — composed rkey `{argument_rkey}-{did_suffix}` (see [Duplicate Prevention](#duplicate-prevention))
 - **Stored in:** Governance PDS
 
 #### `app.ch.poltr.review.response`
@@ -266,7 +280,7 @@ A reviewer's evaluation of an argument.
 | label | string | Human-readable label |
 | rating | integer | Assessment value (1–5) |
 
-- **Key:** `tid`
+- **Key:** `any` — composed rkey `{argument_rkey}-{did_suffix}` (see [Duplicate Prevention](#duplicate-prevention))
 - **Stored in:** Governance PDS
 
 ### Modified Records
@@ -396,6 +410,7 @@ Stored as `PEER_REVIEW_CRITERIA` env var (JSON). Initial set:
 | `services/front/src/lib/agent.ts` | Frontend API functions |
 | `services/front/src/app/ballots/[id]/page.tsx` | Review status badges |
 | `services/front/src/app/review/page.tsx` | Review dashboard UI |
+| `infra/scripts/import_peerreviews.py` | Historical data import from Demokratiefabrik xlsx dumps |
 
 ---
 

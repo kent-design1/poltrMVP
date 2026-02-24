@@ -9,11 +9,12 @@
   - Scans existing argument records to build `content_id → AT URI` map
   - Uses `putRecord` with composed rkeys (`{content_id}-{did_suffix}`) for idempotent re-runs
   - Maps old binary criteria (0/1) to rating scale (1/5), `response=1` → `APPROVE`, `response=0` → `REJECT`
-  - Env vars: `PDS_HOST`, `GOV_HANDLE`, `GOV_PASSWORD`, `BALLOT_URI`, `DRY_RUN`, `PEERREVIEW_XLSX`, `PROGRESSION_XLSX`
+  - Env vars: `PDS_HOST`, `GOV_HANDLE`, `GOV_PASSWORD`, `BALLOT_URI`, `MAX_RESPONSES`, `DRY_RUN`, `PEERREVIEW_XLSX`, `PROGRESSION_XLSX`
 - **Structural duplicate prevention for peer review** (`services/appview/src/lib/governance_pds.py`): Added `put_governance_record()` (upsert with explicit rkey) and `compose_review_rkey()` helper (`{arg_rkey}-{did_suffix}`). Duplicate invitations/responses are now impossible at the PDS level — `putRecord` overwrites rather than creating a second record
 - **Refactored invitation creation** (`services/appview/src/lib/peer_review.py`): `_invite_for_argument()` now uses `put_governance_record` with composed rkey instead of `create_governance_record`
 - **Refactored review submission** (`services/appview/src/routes/review/__init__.py`): `submit_review()` now uses `put_governance_record` with composed rkey. Existing DB duplicate check remains as fast-path guard
 - **Updated lexicon key type** (`services/front/src/lexicons/`): Changed `app.ch.poltr.review.invitation` and `app.ch.poltr.review.response` from `"key": "tid"` to `"key": "any"` to allow composed rkeys
+- **Updated docs** (`doc/PEER_REVIEW.md`): Documented composed rkey format, structural duplicate prevention mechanism, updated lexicon key types from `tid` to `any`, added import script to implementation files table
 
 ### Comment-on-Comment Threading (`infra/scripts`)
 - **Added nested reply support to `import_comments.py`**: Previously, comments whose `parent_id` referenced another comment were silently skipped. Now uses two-pass parsing: Pass 1 reads all COMMENT rows into a dict; Pass 2 classifies each as root (parent is argument), nested (parent is another comment), or orphan (skip). Walks up the `parent_id` chain to resolve the root argument AT-URI for nested replies. Topological sort (Kahn's algorithm) ensures parents are created before children on the PDS. Tracks `comment_id → AT-URI` and `comment_id → DID` mappings during import. Sets `record.parent` to the direct parent comment's AT-URI for nested replies. Excludes parent comment's author when randomly assigning users to nested replies

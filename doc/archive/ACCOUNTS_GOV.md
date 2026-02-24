@@ -1,10 +1,10 @@
-● Account: smartinfo.poltr.info
+● Account: admin.poltr.info
   ┌─────────────────┬──────────────────────────────────┐
   │      Feld       │               Wert               │
   ├─────────────────┼──────────────────────────────────┤
-  │ DID             │ did:plc:zhra47ez7pfo7nr3wcngljtp │
+  │ DID             │ .. │
   ├─────────────────┼──────────────────────────────────┤
-  │ Handle          │ smartinfo.poltr.info             │
+  │ Handle          │ admin.id.poltr.info             │
   ├─────────────────┼──────────────────────────────────┤
   │ PDS             │ https://pds.poltr.info           │
   ├─────────────────┼──────────────────────────────────┤
