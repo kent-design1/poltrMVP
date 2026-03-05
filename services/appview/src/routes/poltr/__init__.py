@@ -946,10 +946,14 @@ async def list_activity(
                 a.rkey AS argument_rkey,
                 NULL::text AS comment_uri,
                 NULL::text AS comment_text,
+                NULL::int AS comment_like_count,
+                NULL::int AS comment_reply_count,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
                 NULL::text AS parent_text,
-                false AS parent_has_parent
+                false AS parent_has_parent,
+                NULL::int AS parent_like_count,
+                NULL::int AS parent_reply_count
             FROM app_arguments a
             WHERE a.ballot_rkey = $1 AND NOT a.deleted AND a.review_status != 'rejected'
 
@@ -970,10 +974,14 @@ async def list_activity(
                 a.rkey AS argument_rkey,
                 NULL::text AS comment_uri,
                 NULL::text AS comment_text,
+                NULL::int AS comment_like_count,
+                NULL::int AS comment_reply_count,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
                 NULL::text AS parent_text,
-                false AS parent_has_parent
+                false AS parent_has_parent,
+                NULL::int AS parent_like_count,
+                NULL::int AS parent_reply_count
             FROM app_arguments a
             WHERE a.ballot_rkey = $1 AND NOT a.deleted AND a.review_status = 'approved'
 
@@ -994,10 +1002,14 @@ async def list_activity(
                 a.rkey AS argument_rkey,
                 c.uri AS comment_uri,
                 c.text AS comment_text,
+                c.like_count AS comment_like_count,
+                (SELECT count(*)::int FROM app_comments r WHERE r.parent_uri = c.uri AND NOT r.deleted) AS comment_reply_count,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
                 NULL::text AS parent_text,
-                false AS parent_has_parent
+                false AS parent_has_parent,
+                NULL::int AS parent_like_count,
+                NULL::int AS parent_reply_count
             FROM app_comments c
             JOIN app_arguments a ON a.uri = c.argument_uri
             WHERE c.ballot_rkey = $1 AND NOT c.deleted AND c.parent_uri IS NULL AND c.origin = 'intern'
@@ -1019,10 +1031,14 @@ async def list_activity(
                 a.rkey AS argument_rkey,
                 c.uri AS comment_uri,
                 c.text AS comment_text,
+                c.like_count AS comment_like_count,
+                (SELECT count(*)::int FROM app_comments r WHERE r.parent_uri = c.uri AND NOT r.deleted) AS comment_reply_count,
                 pc.uri AS parent_uri,
                 pc.did AS parent_did,
                 pc.text AS parent_text,
-                (pc.parent_uri IS NOT NULL) AS parent_has_parent
+                (pc.parent_uri IS NOT NULL) AS parent_has_parent,
+                pc.like_count AS parent_like_count,
+                (SELECT count(*)::int FROM app_comments r WHERE r.parent_uri = pc.uri AND NOT r.deleted) AS parent_reply_count
             FROM app_comments c
             JOIN app_arguments a ON a.uri = c.argument_uri
             JOIN app_comments pc ON pc.uri = c.parent_uri
@@ -1090,6 +1106,8 @@ async def list_activity(
                 item["comment"] = {
                     "uri": row["comment_uri"],
                     "text": get_string(row, "comment_text") or "",
+                    "likeCount": get_number(row, "comment_like_count") or 0,
+                    "replyCount": get_number(row, "comment_reply_count") or 0,
                 }
 
             if activity_type == "reply" and row.get("parent_uri"):
@@ -1099,6 +1117,8 @@ async def list_activity(
                     "displayName": get_string(row, "parent_display_name"),
                     "text": get_string(row, "parent_text") or "",
                     "hasParent": bool(row.get("parent_has_parent")),
+                    "likeCount": get_number(row, "parent_like_count") or 0,
+                    "replyCount": get_number(row, "parent_reply_count") or 0,
                 }
                 item["parent"] = {k: v for k, v in parent_raw.items() if v is not None}
 

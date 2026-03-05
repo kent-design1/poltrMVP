@@ -93,6 +93,8 @@ export interface ActivityItem {
   comment?: {
     uri: string;
     text: string;
+    likeCount?: number;
+    replyCount?: number;
   };
   parent?: {
     uri: string;
@@ -100,6 +102,8 @@ export interface ActivityItem {
     displayName?: string;
     text: string;
     hasParent?: boolean;
+    likeCount?: number;
+    replyCount?: number;
   };
   viewer?: {
     argumentLike?: string;

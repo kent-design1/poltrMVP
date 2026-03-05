@@ -172,11 +172,10 @@ function FocalAvatar({ canton, color }: { canton?: string; color?: string }) {
 function ArgumentHeader({ title, type, approved }: { title: string; type?: 'PRO' | 'CONTRA'; approved?: boolean }) {
   const isPro = type === 'PRO';
   return (
-    <div className="bg-card border-b px-4 py-2 flex items-center gap-2">
+    <div className="px-4 pt-1.5 pb-0 flex items-center gap-2">
       {approved && <span className="text-sm leading-none shrink-0">&#9989;</span>}
       <span
-        className="text-xs font-semibold flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-        style={{ color: type === 'PRO' ? '#166534' : type === 'CONTRA' ? '#991b1b' : undefined }}
+        className="text-xs font-semibold flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground"
       >
         {title}
       </span>
@@ -187,20 +186,20 @@ function ArgumentHeader({ title, type, approved }: { title: string; type?: 'PRO'
 
 function ThreadSkippedRow() {
   return (
-    <div className="bg-card px-4 py-1 flex gap-3">
+    <div className="px-4 py-0 flex gap-3">
       <div className="w-10 shrink-0 flex flex-col items-center">
         <div className="flex-1 ml-px" style={{ borderLeft: '2px dashed #d1d5db' }} />
       </div>
-      <div className="text-xs text-muted-foreground self-center py-0.5">
-        &middot;&middot;&middot;
+      <div className="text-xs text-muted-foreground self-center pt-3 pb-3">
+        &middot;&middot;&middot; <span className="text-blue-600 hover:underline">Vollst&auml;ndiger Thread ansehen</span>
       </div>
     </div>
   );
 }
 
-function ThreadContextRow({ displayName, text }: { displayName?: string; text: string }) {
+function ThreadContextRow({ displayName, text, likeCount, replyCount }: { displayName?: string; text: string; likeCount?: number; replyCount?: number }) {
   return (
-    <div className="bg-card border-b px-4 py-2.5 flex gap-3">
+    <div className="px-4 py-0 flex gap-3">
       <div className="w-10 shrink-0 relative flex flex-col items-center">
         <div
           className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2"
@@ -212,8 +211,16 @@ function ThreadContextRow({ displayName, text }: { displayName?: string; text: s
         <div className="font-semibold text-sm text-muted-foreground mb-0.5">
           {displayName || 'Anonym'}
         </div>
-        <div className="text-sm text-muted-foreground leading-snug break-words">
+        <div className="text-sm text-muted-foreground leading-normal break-words pb-1.5">
           {text}
+        </div>
+        <div className="flex items-center gap-5 pb-3">
+          <span className="text-xs text-muted-foreground">
+            {'\ud83d\udcac'} {replyCount ?? 0}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {'\u2661'} {likeCount ?? 0}
+          </span>
         </div>
       </div>
     </div>
@@ -234,7 +241,7 @@ function FocalRow({
   unseen?: boolean;
 }) {
   return (
-    <div className="bg-card px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
+    <div className="px-4 py-0 flex gap-3">
       <FocalAvatar canton={actor.canton} color={actor.color} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: replyTo ? 4 : 6 }}>
@@ -249,7 +256,7 @@ function FocalRow({
             Replying to {replyTo}
           </div>
         )}
-        <div className="text-sm leading-relaxed break-words">{text}</div>
+        <div className="text-sm leading-normal break-words pb-1.5">{text}</div>
       </div>
     </div>
   );
@@ -261,7 +268,7 @@ function ActionBar({ likeCount, commentCount, argumentLike }: {
   argumentLike?: string;
 }) {
   return (
-    <div className="bg-card border-t px-4 py-2 flex items-center gap-5">
+    <div className="mb-3 flex items-center gap-5" style={{ paddingLeft: 68, paddingRight: 16 }}>
       <span className="text-xs text-muted-foreground">
         {'\ud83d\udcac'} {commentCount ?? 0}
       </span>
@@ -284,11 +291,11 @@ function CommentActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
+      className="cursor-pointer hover:bg-muted/50 transition-colors"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} />
       <FocalRow actor={item.actor} text={item.comment?.text ?? ''} timestamp={item.activityAt} unseen={unseen} />
-      <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
+      <ActionBar likeCount={item.comment?.likeCount} commentCount={item.comment?.replyCount} argumentLike={item.viewer?.argumentLike} />
     </div>
   );
 }
@@ -298,13 +305,13 @@ function ReplyActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
+      className="cursor-pointer hover:bg-muted/50 transition-colors"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} />
       {item.parent?.hasParent && <ThreadSkippedRow />}
-      {item.parent && <ThreadContextRow displayName={item.parent.displayName} text={item.parent.text} />}
+      {item.parent && <ThreadContextRow displayName={item.parent.displayName} text={item.parent.text} likeCount={item.parent.likeCount} replyCount={item.parent.replyCount} />}
       <FocalRow actor={item.actor} text={item.comment?.text ?? ''} timestamp={item.activityAt} replyTo={item.parent?.displayName} unseen={unseen} />
-      <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
+      <ActionBar likeCount={item.comment?.likeCount} commentCount={item.comment?.replyCount} argumentLike={item.viewer?.argumentLike} />
     </div>
   );
 }
@@ -319,9 +326,9 @@ function NewArgumentActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
+      className="cursor-pointer hover:bg-muted/50 transition-colors"
     >
-      <div className="bg-card px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
+      <div className="px-4 py-0 flex gap-3">
         <FocalAvatar canton={item.actor.canton} color={item.actor.color} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -338,6 +345,7 @@ function NewArgumentActivityCard({ item, onNavigate }: ActivityCardProps) {
           {preview && (
             <div className="text-sm text-muted-foreground leading-normal">{preview}</div>
           )}
+          <div className="pb-3" />
         </div>
       </div>
       <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
@@ -350,10 +358,10 @@ function MilestoneActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
+      className="cursor-pointer hover:bg-muted/50 transition-colors"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} approved />
-      <div className="bg-card px-4 py-2.5 flex items-center gap-3">
+      <div className="px-4 py-0 flex items-center gap-3">
         <div className="w-10 shrink-0" />
         <div className="flex-1 flex items-center gap-3">
           <span className="text-xs font-semibold text-green-800">
@@ -381,7 +389,7 @@ function ActivityFeed({
   if (activities.length === 0) return null;
 
   return (
-    <div>
+    <div className="border rounded-lg overflow-hidden divide-y divide-border">
       {activities.map((item) => {
         const props: ActivityCardProps = { item, onNavigate };
         switch (item.type) {
