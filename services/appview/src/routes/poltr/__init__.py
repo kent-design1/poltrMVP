@@ -948,7 +948,8 @@ async def list_activity(
                 NULL::text AS comment_text,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
-                NULL::text AS parent_text
+                NULL::text AS parent_text,
+                false AS parent_has_parent
             FROM app_arguments a
             WHERE a.ballot_rkey = $1 AND NOT a.deleted AND a.review_status != 'rejected'
 
@@ -971,7 +972,8 @@ async def list_activity(
                 NULL::text AS comment_text,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
-                NULL::text AS parent_text
+                NULL::text AS parent_text,
+                false AS parent_has_parent
             FROM app_arguments a
             WHERE a.ballot_rkey = $1 AND NOT a.deleted AND a.review_status = 'approved'
 
@@ -994,7 +996,8 @@ async def list_activity(
                 c.text AS comment_text,
                 NULL::text AS parent_uri,
                 NULL::text AS parent_did,
-                NULL::text AS parent_text
+                NULL::text AS parent_text,
+                false AS parent_has_parent
             FROM app_comments c
             JOIN app_arguments a ON a.uri = c.argument_uri
             WHERE c.ballot_rkey = $1 AND NOT c.deleted AND c.parent_uri IS NULL AND c.origin = 'intern'
@@ -1018,7 +1021,8 @@ async def list_activity(
                 c.text AS comment_text,
                 pc.uri AS parent_uri,
                 pc.did AS parent_did,
-                pc.text AS parent_text
+                pc.text AS parent_text,
+                (pc.parent_uri IS NOT NULL) AS parent_has_parent
             FROM app_comments c
             JOIN app_arguments a ON a.uri = c.argument_uri
             JOIN app_comments pc ON pc.uri = c.parent_uri
@@ -1094,6 +1098,7 @@ async def list_activity(
                     "did": get_string(row, "parent_did") or "",
                     "displayName": get_string(row, "parent_display_name"),
                     "text": get_string(row, "parent_text") or "",
+                    "hasParent": bool(row.get("parent_has_parent")),
                 }
                 item["parent"] = {k: v for k, v in parent_raw.items() if v is not None}
 

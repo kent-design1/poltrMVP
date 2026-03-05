@@ -99,6 +99,7 @@ export interface ActivityItem {
     did: string;
     displayName?: string;
     text: string;
+    hasParent?: boolean;
   };
   viewer?: {
     argumentLike?: string;

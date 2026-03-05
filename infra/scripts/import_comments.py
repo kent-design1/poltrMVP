@@ -339,6 +339,8 @@ class CommentImporter:
             d = dict(zip(headers, row))
             if d.get("type") != "COMMENT":
                 continue
+            if d.get("contenttree_id") == 5:
+                continue  # skip INVITED_COMMENT tree (ballot-level opinions, not argument replies)
             if d.get("deleted") == 1 or d.get("disabled") == 1:
                 continue
 

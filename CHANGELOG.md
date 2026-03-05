@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-03-02
+
+### Comment Detail Page + Feed Navigation (`services/front`, `services/appview`)
+- **New page `/feed/[id]/comment`** (`services/front/src/app/feed/[id]/comment/page.tsx`): Comment thread detail view. Shows full ancestor chain (compact gray strips, indented per level), focal comment (white bg, blue left border, prominent), and direct replies (full `CommentNode` threading). Reply input at bottom posts as reply to the focal comment. Marks item as seen on navigation
+- **New endpoint `GET /xrpc/app.ch.poltr.comment.get`** (`services/appview/src/routes/poltr/__init__.py`): Returns a single comment by AT URI plus its parent argument info (`uri`, `rkey`, `title`, `body`, `type`, `likeCount`, `commentCount`, `reviewStatus`, `ballotRkey`). 404 if deleted or not found
+- **New agent function `getComment()`** (`services/front/src/lib/agent.ts`): Wrapper around the new endpoint
+- **Replaced inline expansion with page navigation** (`services/front/src/app/feed/[id]/page.tsx`): Clicking a comment/reply card now navigates to `/feed/[id]/comment?uri=…`; clicking an argument/milestone card navigates to `/ballots/[id]`. Removed `expandedUri` state, `handleToggleExpand`, and all inline `ArgumentComments` rendering. Removed `buildThreadTree`, `CommentNode`, `ArgumentComments`, and `ReplyInput` components (now only defined in the comment detail page)
+
+### Activity Tab — Feed View Upgrade (`services/front`, `services/appview`, `infra/scripts/postgres`)
+- **New DB table `app_activity_seen`** (`infra/scripts/postgres/db-setup.sql`): Persists per-user seen state for activity items. Primary key `(did, activity_uri)`, indexed on `did`
+- **New endpoint `GET /xrpc/app.ch.poltr.activity.list`** (`services/appview/src/routes/poltr/__init__.py`): Returns a paginated, chronological activity feed for a ballot. Uses a CTE UNION of 4 activity types (new_argument, milestone, comment, reply). Supports `filter` (all/comments/arguments), ISO timestamp `cursor` pagination, and viewer context (like state + seen state)
+- **New endpoint `POST /xrpc/app.ch.poltr.activity.markSeen`** (`services/appview/src/routes/poltr/__init__.py`): Marks a batch of activity URIs as seen for the authenticated user via `INSERT … ON CONFLICT DO NOTHING`
+- **New `ActivityItem` TypeScript type** (`services/front/src/types/ballots.ts`): Covers all 4 activity types with actor, argument, comment, parent, and viewer sub-objects
+- **New agent functions `listActivity`, `markActivitySeen`** (`services/front/src/lib/agent.ts`): Thin wrappers around the two new XRPC endpoints
+- **Redesigned `/feed/[id]` page** (`services/front/src/app/feed/[id]/page.tsx`): Replaced virtualised argument list with an Activity Tab. Key changes:
+  - 4 distinct card types (CommentActivityCard, ReplyActivityCard, NewArgumentActivityCard, MilestoneActivityCard) with colour-coded backgrounds
+  - Blue dot unseen indicator + shadow elevation for unseen items
+  - ArgumentContextBox reusable component (gray bg, blue left border) for argument context in comment/reply/milestone cards
+  - Filter dropdown (All Activity / Arguments / Comments) replaces old PRO/CONTRA filter tabs + sort select
+  - Click-to-expand inline comment section per card; marks item as seen on expand (optimistic update + DB persist)
+  - "Load More" cursor-based pagination
+  - Removed VirtualArgumentFeed and ArgumentCard components
+
+## 2026-02-25
+
+### Sliding Window Session Expiry (`services/appview`)
+- **Session now extends on every request** (`src/auth/middleware.py`): Changed from fixed 7-day expiry to sliding window — `expires_at` is reset to `NOW() + SESSION_LIFETIME_DAYS` on each authenticated request. Users stay logged in as long as they are active within any 7-day window; inactive sessions still expire and require magic-link re-auth
+
 ## 2026-02-23
 
 ### Peer Review Import & Structural Duplicate Prevention (`infra/scripts`, `services/appview`, `services/front`)
