@@ -1,5 +1,6 @@
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from fastapi import Header, HTTPException, Cookie
 from typing import Optional
 
@@ -58,14 +59,17 @@ async def verify_session_token(
             await conn.execute("DELETE FROM auth_sessions WHERE session_token = $1", token)
             raise HTTPException(status_code=401, detail="Session expired")
 
-        # Update last accessed time
+        # Update last accessed time and extend session (sliding window)
+        session_lifetime_days = int(os.getenv("SESSION_LIFETIME_DAYS", "7"))
         await conn.execute(
             """
             UPDATE auth_sessions
-            SET last_accessed_at = NOW()
+            SET last_accessed_at = NOW(),
+                expires_at = NOW() + $2 * INTERVAL '1 day'
             WHERE session_token = $1
             """,
             token,
+            session_lifetime_days,
         )
 
         # Parse user data

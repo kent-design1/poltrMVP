@@ -148,6 +148,15 @@ CREATE INDEX app_comments_parent_uri_idx ON app_comments (parent_uri);
 CREATE INDEX app_comments_argument_uri_idx ON app_comments (argument_uri);
 CREATE INDEX app_comments_did_idx ON app_comments (did);
 
+CREATE TABLE app_activity_seen (
+  did            text NOT NULL,
+  activity_uri   text NOT NULL,
+  seen_at        timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (did, activity_uri)
+);
+
+CREATE INDEX idx_activity_seen_did ON app_activity_seen (did);
+
 CREATE TABLE app_profiles (
   did              text PRIMARY KEY,
   display_name     varchar(200),

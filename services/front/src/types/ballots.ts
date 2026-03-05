@@ -70,6 +70,42 @@ export interface CommentWithMetadata {
   replies?: CommentWithMetadata[];
 }
 
+export interface ActivityItem {
+  type: 'comment' | 'reply' | 'new_argument' | 'milestone';
+  activityUri: string;
+  activityAt: string; // ISO timestamp
+  actor: {
+    did: string;
+    displayName?: string;
+    canton?: string;
+    color?: string;
+  };
+  argument: {
+    uri: string;
+    rkey: string;
+    title: string;
+    body?: string;
+    type?: 'PRO' | 'CONTRA';
+    likeCount?: number;
+    commentCount?: number;
+    reviewStatus?: string;
+  };
+  comment?: {
+    uri: string;
+    text: string;
+  };
+  parent?: {
+    uri: string;
+    did: string;
+    displayName?: string;
+    text: string;
+  };
+  viewer?: {
+    argumentLike?: string;
+    seen?: boolean;
+  };
+}
+
 export interface ReviewCriterion {
   key: string;
   label: string;

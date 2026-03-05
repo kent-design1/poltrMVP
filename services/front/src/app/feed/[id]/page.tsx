@@ -1,34 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, forwardRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../lib/AuthContext';
-import { getBallot, listArguments, listComments, createComment, createArgument } from '../../../lib/agent';
-import { likeBallot, unlikeBallot, likeContent, unlikeContent } from '../../../lib/ballots';
+import { getBallot, listActivity, markActivitySeen, createArgument } from '../../../lib/agent';
+import { likeBallot, unlikeBallot } from '../../../lib/ballots';
 import { formatDate, formatRelativeTime } from '../../../lib/utils';
-import type { BallotWithMetadata, ArgumentWithMetadata, CommentWithMetadata } from '../../../types/ballots';
-
-// ---------------------------------------------------------------------------
-// Thread helpers
-// ---------------------------------------------------------------------------
-
-function buildThreadTree(comments: CommentWithMetadata[]): CommentWithMetadata[] {
-  const map = new Map<string, CommentWithMetadata>();
-  const roots: CommentWithMetadata[] = [];
-  for (const c of comments) {
-    map.set(c.uri, { ...c, replies: [] });
-  }
-  for (const c of comments) {
-    const node = map.get(c.uri)!;
-    if (c.parentUri && map.has(c.parentUri)) {
-      map.get(c.parentUri)!.replies!.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
-}
+import type { BallotWithMetadata, ActivityItem } from '../../../types/ballots';
 
 // ---------------------------------------------------------------------------
 // Canton avatar component
@@ -74,347 +52,6 @@ function BskyAvatar({ size = 28 }: { size?: number }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Comment component
-// ---------------------------------------------------------------------------
-
-function CommentNode({
-  comment,
-  depth,
-  onLikeToggle,
-  onReply,
-}: {
-  comment: CommentWithMetadata;
-  depth: number;
-  onLikeToggle: (c: CommentWithMetadata) => void;
-  onReply: (parentUri: string) => void;
-}) {
-  const indent = typeof window !== 'undefined' && window.innerWidth < 640 ? 16 : 24;
-  const isExtern = comment.origin === 'extern';
-  const liked = !!comment.viewer?.like;
-
-  return (
-    <div style={{ paddingLeft: depth > 0 ? indent : 0 }}>
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        paddingTop: 10,
-        paddingBottom: 6,
-        borderLeft: depth > 0 ? '2px solid #e0e0e0' : 'none',
-        paddingLeft: depth > 0 ? 10 : 0,
-      }}>
-        {isExtern
-          ? <BskyAvatar size={28} />
-          : <CantonAvatar canton={comment.author.canton} color={comment.author.color} size={28} />
-        }
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#8e8e8e' }}>
-            <span style={{ fontWeight: 600, color: '#333' }}>
-              {isExtern
-                ? (comment.author.handle || comment.author.displayName || 'Bluesky')
-                : (comment.author.displayName || 'Anonym')}
-            </span>
-            {isExtern && (
-              <span style={{
-                fontSize: 10,
-                padding: '1px 5px',
-                borderRadius: 3,
-                backgroundColor: '#e3f2fd',
-                color: '#1185fe',
-              }}>Bluesky</span>
-            )}
-            <span>{comment.record.createdAt ? formatRelativeTime(comment.record.createdAt) : ''}</span>
-          </div>
-          <div style={{ fontSize: 14, color: '#444', lineHeight: 1.5, marginTop: 2 }}>
-            {comment.record.body}
-          </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 4, fontSize: 13, color: '#8e8e8e' }}>
-            <button
-              onClick={() => onLikeToggle(comment)}
-              style={{
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                color: liked ? '#d81b60' : '#8e8e8e', fontSize: 13,
-              }}
-            >
-              {liked ? '\u2764' : '\u2661'} {(comment.likeCount ?? 0) > 0 ? comment.likeCount : ''}
-            </button>
-            {!isExtern && (
-              <button
-                onClick={() => onReply(comment.uri)}
-                style={{
-                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                  color: '#8e8e8e', fontSize: 13,
-                }}
-              >
-                {'\ud83d\udcac'} Reply
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      {/* Nested replies — max visual depth 2 */}
-      {comment.replies && comment.replies.length > 0 && (
-        <div>
-          {comment.replies.map((r) => (
-            <CommentNode
-              key={r.uri}
-              comment={r}
-              depth={Math.min(depth + 1, 2)}
-              onLikeToggle={onLikeToggle}
-              onReply={onReply}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Threaded comments section for an argument
-// ---------------------------------------------------------------------------
-
-function ArgumentComments({
-  argumentUri,
-  commentCount,
-}: {
-  argumentUri: string;
-  commentCount: number;
-}) {
-  const [comments, setComments] = useState<CommentWithMetadata[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [replyTarget, setReplyTarget] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const loadComments = useCallback(async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const data = await listComments(argumentUri);
-      setComments(data);
-      setExpanded(true);
-    } catch (err) {
-      console.error('Failed to load comments:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [argumentUri, loading]);
-
-  // Auto-load if there are comments
-  useEffect(() => {
-    if (commentCount > 0 && !comments && !loading) {
-      loadComments();
-    }
-  }, [commentCount, comments, loading, loadComments]);
-
-  const handleLikeToggle = useCallback(async (c: CommentWithMetadata) => {
-    if (!comments) return;
-    const liked = !!c.viewer?.like;
-
-    setComments(prev => prev!.map(cm =>
-      cm.uri === c.uri
-        ? { ...cm, likeCount: (cm.likeCount ?? 0) + (liked ? -1 : 1), viewer: liked ? undefined : { like: '__pending__' } }
-        : cm
-    ));
-
-    try {
-      if (liked) {
-        await unlikeContent(c.viewer!.like!);
-        setComments(prev => prev!.map(cm =>
-          cm.uri === c.uri ? { ...cm, viewer: undefined } : cm
-        ));
-      } else {
-        const likeUri = await likeContent(c.uri, c.cid);
-        setComments(prev => prev!.map(cm =>
-          cm.uri === c.uri ? { ...cm, viewer: { like: likeUri } } : cm
-        ));
-      }
-    } catch (err) {
-      console.error('Failed to toggle like:', err);
-      setComments(prev => prev!.map(cm =>
-        cm.uri === c.uri
-          ? { ...cm, likeCount: (cm.likeCount ?? 0) + (liked ? 1 : -1), viewer: liked ? { like: c.viewer!.like! } : undefined }
-          : cm
-      ));
-    }
-  }, [comments]);
-
-  const handleReply = useCallback((parentUri: string) => {
-    setReplyTarget(parentUri);
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
-
-  const handleSubmitReply = useCallback(async () => {
-    if (!replyText.trim() || submitting) return;
-    setSubmitting(true);
-    try {
-      await createComment(argumentUri, '', replyText.trim(), replyTarget ?? undefined);
-      setReplyText('');
-      setReplyTarget(null);
-      const data = await listComments(argumentUri);
-      setComments(data);
-    } catch (err) {
-      console.error('Failed to submit comment:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [argumentUri, replyText, replyTarget, submitting]);
-
-  const handleTopLevelComment = useCallback(async () => {
-    if (!replyText.trim() || submitting) return;
-    setSubmitting(true);
-    try {
-      await createComment(argumentUri, '', replyText.trim());
-      setReplyText('');
-      setReplyTarget(null);
-      const data = await listComments(argumentUri);
-      setComments(data);
-    } catch (err) {
-      console.error('Failed to submit comment:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [argumentUri, replyText, submitting]);
-
-  if (commentCount === 0 && !expanded) {
-    return (
-      <div style={{ padding: '8px 0 4px 0' }}>
-        <ReplyInput
-          ref={inputRef}
-          value={replyText}
-          onChange={setReplyText}
-          onSubmit={handleTopLevelComment}
-          submitting={submitting}
-          placeholder="Write a comment..."
-        />
-      </div>
-    );
-  }
-
-  if (loading && !comments) {
-    return <div style={{ fontSize: 13, color: '#8e8e8e', padding: '8px 0' }}>Loading comments...</div>;
-  }
-
-  if (!comments) return null;
-
-  const threaded = buildThreadTree(comments);
-  const visibleRoots = expanded ? threaded : threaded.slice(0, 3);
-  const hiddenCount = threaded.length - 3;
-
-  return (
-    <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 8, paddingTop: 4 }}>
-      {visibleRoots.map((c) => {
-        const previewReplies = expanded ? c.replies : (c.replies ?? []).slice(0, 1);
-        const hiddenReplies = (c.replies ?? []).length - (previewReplies?.length ?? 0);
-        return (
-          <div key={c.uri}>
-            <CommentNode comment={{ ...c, replies: previewReplies }} depth={0} onLikeToggle={handleLikeToggle} onReply={handleReply} />
-            {!expanded && hiddenReplies > 0 && (
-              <button
-                onClick={() => setExpanded(true)}
-                style={{ background: 'none', border: 'none', color: '#0085ff', fontSize: 13, cursor: 'pointer', padding: '4px 0 4px 34px' }}
-              >
-                Show {hiddenReplies} more {hiddenReplies === 1 ? 'reply' : 'replies'}...
-              </button>
-            )}
-          </div>
-        );
-      })}
-      {!expanded && hiddenCount > 0 && (
-        <button
-          onClick={() => setExpanded(true)}
-          style={{ background: 'none', border: 'none', color: '#0085ff', fontSize: 13, cursor: 'pointer', padding: '4px 0' }}
-        >
-          Show {hiddenCount} more {hiddenCount === 1 ? 'comment' : 'comments'}...
-        </button>
-      )}
-
-      {replyTarget && (
-        <div style={{ fontSize: 12, color: '#8e8e8e', padding: '4px 0 0 0' }}>
-          Replying to comment...{' '}
-          <button
-            onClick={() => setReplyTarget(null)}
-            style={{ background: 'none', border: 'none', color: '#0085ff', fontSize: 12, cursor: 'pointer' }}
-          >cancel</button>
-        </div>
-      )}
-      <ReplyInput
-        ref={inputRef}
-        value={replyText}
-        onChange={setReplyText}
-        onSubmit={replyTarget ? handleSubmitReply : handleTopLevelComment}
-        submitting={submitting}
-        placeholder="Write a comment..."
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Reply input
-// ---------------------------------------------------------------------------
-
-const ReplyInput = forwardRef<HTMLTextAreaElement, {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  submitting: boolean;
-  placeholder: string;
-}>(function ReplyInput({ value, onChange, onSubmit, submitting, placeholder }, ref) {
-  const [focused, setFocused] = useState(false);
-
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '6px 0' }}>
-      <textarea
-        ref={ref}
-        rows={focused ? 3 : 1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => { if (!value) setFocused(false); }}
-        placeholder={placeholder}
-        style={{
-          flex: 1,
-          padding: '8px 10px',
-          fontSize: 13,
-          border: '1px solid #ddd',
-          borderRadius: 6,
-          resize: 'none',
-          outline: 'none',
-          fontFamily: 'inherit',
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
-      {(focused || value) && (
-        <button
-          onClick={onSubmit}
-          disabled={!value.trim() || submitting}
-          style={{
-            padding: '8px 14px',
-            fontSize: 13,
-            backgroundColor: '#0085ff',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: value.trim() && !submitting ? 'pointer' : 'default',
-            opacity: value.trim() && !submitting ? 1 : 0.5,
-          }}
-        >
-          {submitting ? '...' : 'Send'}
-        </button>
-      )}
-    </div>
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Add Argument Modal
@@ -467,7 +104,6 @@ function AddArgumentModal({
       >
         <h3 style={{ margin: '0 0 16px 0', fontSize: 18 }}>Argument hinzuf&uuml;gen</h3>
 
-        {/* Type toggle */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           {(['PRO', 'CONTRA'] as const).map((t) => (
             <button
@@ -552,181 +188,334 @@ function AddArgumentModal({
 }
 
 // ---------------------------------------------------------------------------
-// Single argument card (used by virtualiser)
+// Feed item shared helpers
 // ---------------------------------------------------------------------------
 
-function ArgumentCard({
-  arg,
-  onLikeToggle,
-}: {
-  arg: ArgumentWithMetadata;
-  onLikeToggle: (arg: ArgumentWithMetadata) => void;
-}) {
-  const isPro = arg.record.type === 'PRO';
-  const accentColor = isPro ? '#4caf50' : '#ef5350';
-  const liked = !!arg.viewer?.like;
+interface ActivityCardProps {
+  item: ActivityItem;
+  onNavigate: (item: ActivityItem) => void;
+}
 
+// Left accent colors by type
+const UNSEEN_ACCENT: Record<string, string> = {
+  comment: '#1565c0',
+  reply: '#1565c0',
+  new_argument: '#0277bd',
+  milestone: '#e65100',
+};
+
+function feedItemStyle(type: string, unseen: boolean): React.CSSProperties {
+  return {
+    padding: '14px 16px 12px 16px',
+    cursor: 'pointer',
+    borderBottom: '1px solid #efefef',
+    borderLeft: `3px solid ${unseen ? (UNSEEN_ACCENT[type] ?? '#1565c0') : 'transparent'}`,
+    backgroundColor: unseen ? '#fdfdff' : '#fff',
+  };
+}
+
+// Small blue dot shown inline in the header when unseen
+function UnseenDot() {
   return (
-    <div
-      style={{
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-        borderLeft: `3px solid ${accentColor}`,
-        marginBottom: 14,
-        padding: '16px 18px',
-      }}
-    >
-      {/* Author row */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+    <span style={{
+      display: 'inline-block',
+      width: 7,
+      height: 7,
+      borderRadius: '50%',
+      backgroundColor: '#1565c0',
+      flexShrink: 0,
+      marginLeft: 4,
+    }} />
+  );
+}
+
+// Compact one-line argument reference: "on [Title] [PRO] [✓ voted]"
+function ArgumentRef({
+  title,
+  type,
+  voted,
+}: {
+  title: string;
+  type?: 'PRO' | 'CONTRA';
+  voted?: boolean;
+}) {
+  const isPro = type === 'PRO';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, color: '#aaa' }}>on</span>
+      <span style={{
+        fontSize: 12, fontWeight: 600, color: '#666',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
       }}>
-        <CantonAvatar canton={arg.author.canton} color={arg.author.color} size={32} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ fontWeight: 600, fontSize: 14, color: '#333' }}>
-            {arg.author.displayName || 'Anonym'}
-          </span>
-          <span style={{ fontSize: 13, color: '#8e8e8e', marginLeft: 8 }}>
-            {arg.record.createdAt ? formatRelativeTime(arg.record.createdAt) : ''}
-          </span>
-        </div>
+        {title}
+      </span>
+      {type && (
         <span style={{
-          fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 12,
+          fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8, flexShrink: 0,
           backgroundColor: isPro ? '#e8f5e9' : '#ffebee',
           color: isPro ? '#2e7d32' : '#c62828',
         }}>
           {isPro ? 'Pro' : 'Contra'}
         </span>
-      </div>
-
-      {/* Content */}
-      <h4 style={{ margin: '0 0 6px 0', fontSize: 16, color: '#333' }}>
-        {arg.record.title}
-      </h4>
-      <p style={{ margin: '0 0 10px 0', fontSize: 14, color: '#555', lineHeight: 1.6 }}>
-        {arg.record.body}
-      </p>
-
-      {/* Review badge */}
-      {arg.reviewStatus === 'preliminary' && (
-        <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 10,
-          backgroundColor: '#fff3e0', color: '#e65100',
-        }}>Preliminary</span>
       )}
-      {arg.reviewStatus === 'approved' && (
-        <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 10,
-          backgroundColor: '#e8f5e9', color: '#2e7d32',
-        }}>Peer-reviewed</span>
+      {voted && (
+        <span style={{ fontSize: 11, color: '#2e7d32', flexShrink: 0 }}>{'\u2713'} voted</span>
       )}
-      {arg.reviewStatus === 'rejected' && (
-        <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 10,
-          backgroundColor: '#ffebee', color: '#c62828',
-        }}>Rejected</span>
+    </div>
+  );
+}
+
+// Quoted parent comment — shows as a grayed left-border block
+function ParentQuote({ displayName, text }: { displayName?: string; text: string }) {
+  const truncated = text.length > 120 ? text.slice(0, 120) + '\u2026' : text;
+  return (
+    <div style={{
+      borderLeft: '2px solid #d8d8d8',
+      paddingLeft: 10,
+      marginBottom: 8,
+      fontSize: 13,
+      color: '#999',
+      lineHeight: 1.4,
+    }}>
+      {displayName && (
+        <span style={{ fontWeight: 600, color: '#bbb' }}>{displayName}: </span>
       )}
+      {truncated}
+    </div>
+  );
+}
 
-      {/* Action bar */}
-      <div style={{
-        display: 'flex', gap: 18, marginTop: 10, fontSize: 14, color: '#8e8e8e',
-      }}>
-        <button
-          onClick={() => onLikeToggle(arg)}
-          style={{
-            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-            color: liked ? '#d81b60' : '#8e8e8e', fontSize: 14,
-          }}
-        >
-          {liked ? '\u2764' : '\u2661'} {(arg.likeCount ?? 0) > 0 ? arg.likeCount : ''}
-        </button>
-        <span>
-          {'\ud83d\udcac'} {(arg.commentCount ?? 0) > 0 ? arg.commentCount : ''}
-        </span>
-        <button
-          onClick={() => {
-            navigator.clipboard?.writeText(arg.uri);
-          }}
-          style={{
-            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-            color: '#8e8e8e', fontSize: 14,
-          }}
-        >
-          {'\u2197'} Share
-        </button>
-      </div>
-
-      {/* Threaded comments */}
-      <ArgumentComments
-        argumentUri={arg.uri}
-        commentCount={arg.commentCount ?? 0}
-      />
+// The focal comment text — visually dominant
+function FocalText({ text }: { text: string }) {
+  return (
+    <div style={{ fontSize: 15, color: '#111', lineHeight: 1.55, wordBreak: 'break-word' }}>
+      {text}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Virtualised argument feed
+// CommentActivityCard
 // ---------------------------------------------------------------------------
 
-function VirtualArgumentFeed({
-  arguments_,
-  onArgLikeToggle,
-}: {
-  arguments_: ArgumentWithMetadata[];
-  onArgLikeToggle: (arg: ArgumentWithMetadata) => void;
-}) {
-  const parentRef = useRef<HTMLDivElement>(null);
+function CommentActivityCard({ item, onNavigate }: ActivityCardProps) {
+  const unseen = !item.viewer?.seen;
+  const INDENT = 36; // avatar width (28) + gap (8)
+  return (
+    <div onClick={() => onNavigate(item)} style={feedItemStyle('comment', unseen)}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <CantonAvatar canton={item.actor.canton} color={item.actor.color} size={28} />
+        <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>
+          {item.actor.displayName || 'Anonym'}
+        </span>
+        <span style={{ fontSize: 13, color: '#999' }}>commented</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#bbb', whiteSpace: 'nowrap' }}>
+          {formatRelativeTime(item.activityAt)}
+        </span>
+        {unseen && <UnseenDot />}
+      </div>
+      {/* Context + content, indented under avatar */}
+      <div style={{ paddingLeft: INDENT }}>
+        <ArgumentRef
+          title={item.argument.title}
+          type={item.argument.type}
+          voted={!!item.viewer?.argumentLike}
+        />
+        {item.comment && <FocalText text={item.comment.text} />}
+      </div>
+    </div>
+  );
+}
 
-  const virtualizer = useVirtualizer({
-    count: arguments_.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 220,
-    overscan: 5,
-  });
+// ---------------------------------------------------------------------------
+// ReplyActivityCard
+// ---------------------------------------------------------------------------
 
-  // Reset virtualizer when the list changes (filter/sort)
-  useEffect(() => {
-    virtualizer.measure();
-  }, [arguments_, virtualizer]);
+function ReplyActivityCard({ item, onNavigate }: ActivityCardProps) {
+  const unseen = !item.viewer?.seen;
+  const INDENT = 36;
+  return (
+    <div onClick={() => onNavigate(item)} style={feedItemStyle('reply', unseen)}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+        <CantonAvatar canton={item.actor.canton} color={item.actor.color} size={28} />
+        <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>
+          {item.actor.displayName || 'Anonym'}
+        </span>
+        <span style={{ fontSize: 13, color: '#999' }}>replied to</span>
+        <span style={{ fontWeight: 600, fontSize: 13, color: '#555' }}>
+          {item.parent?.displayName || 'Anonym'}
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#bbb', whiteSpace: 'nowrap' }}>
+          {formatRelativeTime(item.activityAt)}
+        </span>
+        {unseen && <UnseenDot />}
+      </div>
+      {/* Context + hierarchy, indented */}
+      <div style={{ paddingLeft: INDENT }}>
+        <ArgumentRef
+          title={item.argument.title}
+          type={item.argument.type}
+          voted={!!item.viewer?.argumentLike}
+        />
+        {/* Parent comment as quoted context */}
+        {item.parent && (
+          <ParentQuote
+            displayName={item.parent.displayName}
+            text={item.parent.text}
+          />
+        )}
+        {/* Focal reply — the new message */}
+        {item.comment && <FocalText text={item.comment.text} />}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NewArgumentActivityCard
+// ---------------------------------------------------------------------------
+
+function NewArgumentActivityCard({ item, onNavigate }: ActivityCardProps) {
+  const unseen = !item.viewer?.seen;
+  const isPro = item.argument.type === 'PRO';
+  const INDENT = 36;
+  const preview = item.argument.body
+    ? item.argument.body.slice(0, 160) + (item.argument.body.length > 160 ? '\u2026' : '')
+    : '';
 
   return (
-    <div
-      ref={parentRef}
-      style={{
-        maxWidth: 640,
-        margin: '0 auto',
-        height: 'calc(100vh - 260px)',
-        overflow: 'auto',
-      }}
-    >
-      <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => (
-          <div
-            key={arguments_[virtualRow.index].uri}
-            data-index={virtualRow.index}
-            ref={virtualizer.measureElement}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              transform: `translateY(${virtualRow.start}px)`,
-            }}
-          >
-            <ArgumentCard
-              arg={arguments_[virtualRow.index]}
-              onLikeToggle={onArgLikeToggle}
-            />
-          </div>
-        ))}
+    <div onClick={() => onNavigate(item)} style={feedItemStyle('new_argument', unseen)}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <CantonAvatar canton={item.actor.canton} color={item.actor.color} size={28} />
+        <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>
+          {item.actor.displayName || 'Anonym'}
+        </span>
+        <span style={{ fontSize: 13, color: '#999' }}>posted a new argument</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#bbb', whiteSpace: 'nowrap' }}>
+          {formatRelativeTime(item.activityAt)}
+        </span>
+        {unseen && <UnseenDot />}
       </div>
+      {/* Argument content */}
+      <div style={{ paddingLeft: INDENT }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: preview ? 6 : 4 }}>
+          <span style={{ fontWeight: 700, fontSize: 15, color: '#111', flex: 1, lineHeight: 1.4 }}>
+            {item.argument.title}
+          </span>
+          {item.argument.type && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+              flexShrink: 0, whiteSpace: 'nowrap', marginTop: 2,
+              backgroundColor: isPro ? '#e8f5e9' : '#ffebee',
+              color: isPro ? '#2e7d32' : '#c62828',
+            }}>
+              {isPro ? 'Pro' : 'Contra'}
+            </span>
+          )}
+        </div>
+        {preview && (
+          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5, marginBottom: 8 }}>
+            {preview}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#bbb' }}>
+          {(item.argument.likeCount ?? 0) > 0 && (
+            <span>{'\u2661'} {item.argument.likeCount}</span>
+          )}
+          {(item.argument.commentCount ?? 0) > 0 && (
+            <span>{'\ud83d\udcac'} {item.argument.commentCount}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MilestoneActivityCard
+// ---------------------------------------------------------------------------
+
+function MilestoneActivityCard({ item, onNavigate }: ActivityCardProps) {
+  const unseen = !item.viewer?.seen;
+  const isPro = item.argument.type === 'PRO';
+  const INDENT = 28; // emoji (20) + gap (8)
+
+  return (
+    <div onClick={() => onNavigate(item)} style={feedItemStyle('milestone', unseen)}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{'\u2705'}</span>
+        <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>Argument approved</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#bbb', whiteSpace: 'nowrap' }}>
+          {formatRelativeTime(item.activityAt)}
+        </span>
+        {unseen && <UnseenDot />}
+      </div>
+      {/* Argument title */}
+      <div style={{ paddingLeft: INDENT }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: '#333', flex: 1, lineHeight: 1.4 }}>
+            {item.argument.title}
+          </span>
+          {item.argument.type && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+              flexShrink: 0, whiteSpace: 'nowrap', marginTop: 2,
+              backgroundColor: isPro ? '#e8f5e9' : '#ffebee',
+              color: isPro ? '#2e7d32' : '#c62828',
+            }}>
+              {isPro ? 'Pro' : 'Contra'}
+            </span>
+          )}
+        </div>
+        {!!item.viewer?.argumentLike && (
+          <span style={{ fontSize: 11, color: '#2e7d32', marginTop: 4, display: 'block' }}>
+            {'\u2713'} voted
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Activity feed
+// ---------------------------------------------------------------------------
+
+function ActivityFeed({
+  activities,
+  onNavigate,
+}: {
+  activities: ActivityItem[];
+  onNavigate: (item: ActivityItem) => void;
+}) {
+  if (activities.length === 0) return null;
+
+  return (
+    <div style={{
+      backgroundColor: '#fff',
+      borderRadius: 8,
+      overflow: 'hidden',
+      border: '1px solid #efefef',
+    }}>
+      {activities.map((item) => {
+        const props: ActivityCardProps = { item, onNavigate };
+        switch (item.type) {
+          case 'comment':
+            return <CommentActivityCard key={item.activityUri} {...props} />;
+          case 'reply':
+            return <ReplyActivityCard key={item.activityUri} {...props} />;
+          case 'new_argument':
+            return <NewArgumentActivityCard key={item.activityUri} {...props} />;
+          case 'milestone':
+            return <MilestoneActivityCard key={item.activityUri} {...props} />;
+          default:
+            return null;
+        }
+      })}
     </div>
   );
 }
@@ -742,13 +531,17 @@ export default function BallotFeed() {
   const id = params.id as string;
 
   const [ballot, setBallot] = useState<BallotWithMetadata | null>(null);
-  const [arguments_, setArguments] = useState<ArgumentWithMetadata[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [ballotLoading, setBallotLoading] = useState(true);
+  const [ballotError, setBallotError] = useState('');
 
-  // Filter & sort state
-  const [filterType, setFilterType] = useState<string | undefined>(undefined);
-  const [sortOrder, setSortOrder] = useState('random');
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState('');
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const [filter, setFilter] = useState<'all' | 'comments' | 'arguments'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
@@ -757,43 +550,68 @@ export default function BallotFeed() {
       router.push('/');
       return;
     }
-    loadData();
+    loadBallot();
   }, [isAuthenticated, authLoading, router, id]);
 
-  const loadData = useCallback(async () => {
-    if (!user || !id) return;
-    setLoading(true);
-    setError('');
+  const loadBallot = useCallback(async () => {
+    if (!id) return;
+    setBallotLoading(true);
+    setBallotError('');
+    try {
+      const ballotData = await getBallot(id);
+      setBallot(ballotData);
+    } catch (err) {
+      setBallotError(err instanceof Error ? err.message : 'Failed to load ballot');
+    } finally {
+      setBallotLoading(false);
+    }
+  }, [id]);
+
+  const loadActivities = useCallback(async (selectedFilter: 'all' | 'comments' | 'arguments', reset = true) => {
+    if (!id) return;
+    if (reset) {
+      setActivityLoading(true);
+      setActivityError('');
+    } else {
+      setLoadingMore(true);
+    }
 
     try {
-      const [ballotData, argsData] = await Promise.all([
-        getBallot(id),
-        listArguments(id, sortOrder, filterType),
-      ]);
-      setBallot(ballotData);
-      setArguments(argsData);
-    } catch (err) {
-      console.error('Error loading ballot detail:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load ballot');
-    } finally {
-      setLoading(false);
-    }
-  }, [user, id, sortOrder, filterType]);
-
-  // Re-fetch arguments when filter/sort changes
-  useEffect(() => {
-    if (!user || !id || authLoading || !isAuthenticated) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const argsData = await listArguments(id, sortOrder, filterType);
-        if (!cancelled) setArguments(argsData);
-      } catch (err) {
-        console.error('Error loading arguments:', err);
+      const currentCursor = reset ? undefined : cursor;
+      const result = await listActivity(id, selectedFilter, currentCursor);
+      if (reset) {
+        setActivities(result.activities);
+      } else {
+        setActivities(prev => [...prev, ...result.activities]);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [sortOrder, filterType, user, id, authLoading, isAuthenticated]);
+      setCursor(result.cursor ?? undefined);
+      setHasMore(!!result.cursor);
+    } catch (err) {
+      setActivityError(err instanceof Error ? err.message : 'Failed to load activity');
+    } finally {
+      setActivityLoading(false);
+      setLoadingMore(false);
+    }
+  }, [id, cursor]);
+
+  // Load on mount and filter change
+  useEffect(() => {
+    if (!isAuthenticated || authLoading || !id) return;
+    setCursor(undefined);
+    loadActivities(filter, true);
+  }, [filter, isAuthenticated, authLoading, id]);
+
+  const handleCardClick = useCallback((item: ActivityItem) => {
+    markActivitySeen([item.activityUri]).catch(console.error);
+    setActivities(acts => acts.map(a =>
+      a.activityUri === item.activityUri ? { ...a, viewer: { ...a.viewer, seen: true } } : a
+    ));
+    if (item.type === 'comment' || item.type === 'reply') {
+      router.push(`/feed/${id}/comment?uri=${encodeURIComponent(item.comment!.uri)}`);
+    } else {
+      router.push(`/ballots/${id}`);
+    }
+  }, [id, router]);
 
   const handleToggleLike = useCallback(async () => {
     if (!ballot) return;
@@ -831,37 +649,6 @@ export default function BallotFeed() {
     }
   }, [ballot]);
 
-  const handleArgLikeToggle = useCallback(async (arg: ArgumentWithMetadata) => {
-    const liked = !!arg.viewer?.like;
-
-    setArguments(prev => prev.map(a =>
-      a.uri === arg.uri
-        ? { ...a, likeCount: (a.likeCount ?? 0) + (liked ? -1 : 1), viewer: liked ? undefined : { like: '__pending__' } }
-        : a
-    ));
-
-    try {
-      if (liked) {
-        await unlikeContent(arg.viewer!.like!);
-        setArguments(prev => prev.map(a =>
-          a.uri === arg.uri ? { ...a, viewer: undefined } : a
-        ));
-      } else {
-        const likeUri = await likeContent(arg.uri, arg.cid);
-        setArguments(prev => prev.map(a =>
-          a.uri === arg.uri ? { ...a, viewer: { like: likeUri } } : a
-        ));
-      }
-    } catch (err) {
-      console.error('Failed to toggle arg like:', err);
-      setArguments(prev => prev.map(a =>
-        a.uri === arg.uri
-          ? { ...a, likeCount: (a.likeCount ?? 0) + (liked ? 1 : -1), viewer: liked ? { like: arg.viewer!.like! } : undefined }
-          : a
-      ));
-    }
-  }, []);
-
   if (authLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -871,12 +658,20 @@ export default function BallotFeed() {
   }
   if (!isAuthenticated || !user) return null;
 
+  const filterLabel: Record<string, string> = {
+    all: 'All Activity',
+    comments: 'Comments',
+    arguments: 'Arguments',
+  };
+
+  const emptyMessage: Record<string, string> = {
+    all: 'No activity yet for this ballot.',
+    comments: 'No comment activity yet.',
+    arguments: 'No argument activity yet.',
+  };
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#f5f5f5',
-      padding: '20px',
-    }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5', padding: '20px' }}>
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
         {/* Header nav */}
         <div style={{
@@ -916,22 +711,21 @@ export default function BallotFeed() {
           </div>
         </div>
 
-        {loading && (
-          <div style={{
-            textAlign: 'center', padding: 40, backgroundColor: 'white', borderRadius: 8,
-          }}>
+        {/* Ballot loading / error */}
+        {ballotLoading && (
+          <div style={{ textAlign: 'center', padding: 40, backgroundColor: 'white', borderRadius: 8 }}>
             <p>Loading ballot...</p>
           </div>
         )}
 
-        {error && (
+        {ballotError && (
           <div style={{
             padding: 20, backgroundColor: '#ffebee', color: '#d32f2f',
             borderRadius: 8, marginBottom: 20, border: '1px solid #ffcdd2',
           }}>
-            <strong>Error:</strong> {error}
+            <strong>Error:</strong> {ballotError}
             <button
-              onClick={loadData}
+              onClick={loadBallot}
               style={{
                 marginLeft: 20, padding: '8px 16px', backgroundColor: '#d32f2f',
                 color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer',
@@ -942,7 +736,7 @@ export default function BallotFeed() {
           </div>
         )}
 
-        {!loading && ballot && (
+        {!ballotLoading && ballot && (
           <>
             {/* Ballot card */}
             <div style={{
@@ -1019,95 +813,100 @@ export default function BallotFeed() {
               </div>
             </div>
 
-            {/* Filter & Sort Toolbar */}
+            {/* Activity toolbar */}
             <div style={{
               position: 'sticky', top: 0, zIndex: 10,
               backgroundColor: '#fff', borderRadius: 8, padding: '10px 16px',
               boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: 16,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              gap: 12, overflowX: 'auto',
+              gap: 12,
             }}>
-              {/* Filter tabs */}
-              <div style={{ display: 'flex', gap: 4 }}>
-                {([
-                  { label: 'Alle', value: undefined, color: '#333' },
-                  { label: 'Pro', value: 'PRO' as const, color: '#2e7d32' },
-                  { label: 'Contra', value: 'CONTRA' as const, color: '#c62828' },
-                ]).map((tab) => (
-                  <button
-                    key={tab.label}
-                    onClick={() => setFilterType(tab.value)}
-                    style={{
-                      padding: '6px 14px', fontSize: 14, fontWeight: 600,
-                      border: 'none', borderRadius: 4, cursor: 'pointer',
-                      backgroundColor: filterType === tab.value ? '#f0f0f0' : 'transparent',
-                      color: tab.color,
-                      borderBottom: filterType === tab.value
-                        ? `2px solid ${tab.color}`
-                        : '2px solid transparent',
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as 'all' | 'comments' | 'arguments')}
+                style={{
+                  padding: '8px 12px', fontSize: 14, fontWeight: 600,
+                  border: '1px solid #ddd', borderRadius: 6,
+                  backgroundColor: '#fff', cursor: 'pointer', outline: 'none',
+                }}
+              >
+                <option value="all">All Activity</option>
+                <option value="arguments">Arguments</option>
+                <option value="comments">Comments</option>
+              </select>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* Sort dropdown */}
-                <select
-                  value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value)}
-                  style={{
-                    padding: '6px 10px', fontSize: 13, border: '1px solid #ddd',
-                    borderRadius: 4, backgroundColor: '#fff', cursor: 'pointer',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="random">Zufall</option>
-                  <option value="top">Top</option>
-                  <option value="new">Neu</option>
-                  <option value="discussed">Diskutiert</option>
-                </select>
-
-                {/* Add argument button — hidden on mobile, shown via FAB */}
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  style={{
-                    padding: '6px 14px', fontSize: 13, fontWeight: 600,
-                    backgroundColor: '#0085ff', color: '#fff', border: 'none',
-                    borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                    display: 'none',
-                  }}
-                  className="desktop-add-btn"
-                >
-                  + Argument
-                </button>
-                <style>{`.desktop-add-btn { display: inline-block !important; } @media (max-width: 639px) { .desktop-add-btn { display: none !important; } }`}</style>
-              </div>
+              <button
+                onClick={() => setShowAddModal(true)}
+                style={{
+                  padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                  backgroundColor: '#0085ff', color: '#fff', border: 'none',
+                  borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                  display: 'none',
+                }}
+                className="desktop-add-btn"
+              >
+                + Argument
+              </button>
+              <style>{`.desktop-add-btn { display: inline-block !important; } @media (max-width: 639px) { .desktop-add-btn { display: none !important; } }`}</style>
             </div>
 
-            {/* Argument Feed (virtualised) */}
-            {arguments_.length > 0 ? (
-              <VirtualArgumentFeed
-                arguments_={arguments_}
-                onArgLikeToggle={handleArgLikeToggle}
-              />
-            ) : (
-              !loading && (
-                <div style={{
-                  textAlign: 'center', padding: 40, backgroundColor: 'white',
-                  borderRadius: 8, color: '#666', maxWidth: 640, margin: '0 auto',
-                }}>
-                  No arguments have been submitted for this ballot yet.
-                </div>
-              )
+            {/* Activity error */}
+            {activityError && (
+              <div style={{
+                padding: 16, backgroundColor: '#ffebee', color: '#d32f2f',
+                borderRadius: 8, marginBottom: 16, border: '1px solid #ffcdd2',
+              }}>
+                {activityError}
+              </div>
             )}
+
+            {/* Activity feed */}
+            <div style={{ maxWidth: 640, margin: '0 auto' }}>
+              {activityLoading ? (
+                <div style={{
+                  textAlign: 'center', padding: 40, backgroundColor: '#fff',
+                  borderRadius: 8, color: '#666', border: '1px solid #efefef',
+                }}>
+                  Loading activity...
+                </div>
+              ) : activities.length === 0 ? (
+                <div style={{
+                  textAlign: 'center', padding: 40, backgroundColor: '#fff',
+                  borderRadius: 8, color: '#666', border: '1px solid #efefef',
+                }}>
+                  {emptyMessage[filter]}
+                </div>
+              ) : (
+                <>
+                  <ActivityFeed
+                    activities={activities}
+                    onNavigate={handleCardClick}
+                  />
+                  {hasMore && (
+                    <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+                      <button
+                        onClick={() => loadActivities(filter, false)}
+                        disabled={loadingMore}
+                        style={{
+                          padding: '10px 24px', fontSize: 14,
+                          border: '1px solid #ddd', borderRadius: 6,
+                          backgroundColor: '#fff', cursor: loadingMore ? 'default' : 'pointer',
+                          color: '#333', opacity: loadingMore ? 0.6 : 1,
+                        }}
+                      >
+                        {loadingMore ? 'Loading...' : 'Load More'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </div>
 
       {/* Mobile FAB */}
-      {!loading && ballot && (
+      {!ballotLoading && ballot && (
         <button
           onClick={() => setShowAddModal(true)}
           style={{
@@ -1130,7 +929,7 @@ export default function BallotFeed() {
           ballotUri={ballot.uri}
           onClose={() => setShowAddModal(false)}
           onCreated={() => {
-            listArguments(id, sortOrder, filterType).then(setArguments).catch(console.error);
+            loadActivities(filter, true);
           }}
         />
       )}

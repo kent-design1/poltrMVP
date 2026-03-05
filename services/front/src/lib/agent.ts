@@ -1,4 +1,4 @@
-import type { BallotWithMetadata, ArgumentWithMetadata, CommentWithMetadata, ReviewCriterion, ReviewInvitation, ReviewStatus, ReviewCriterionRating } from '../types/ballots';
+import type { BallotWithMetadata, ArgumentWithMetadata, CommentWithMetadata, ActivityItem, ReviewCriterion, ReviewInvitation, ReviewStatus, ReviewCriterionRating } from '../types/ballots';
 import { Agent } from '@atproto/api';
 
 /**
@@ -152,6 +152,28 @@ export async function listArguments(
   return content.arguments;
 }
 
+export async function getComment(uri: string): Promise<{
+  comment: CommentWithMetadata;
+  argument: {
+    uri: string;
+    rkey: string;
+    title: string;
+    body?: string;
+    type?: 'PRO' | 'CONTRA';
+    likeCount?: number;
+    commentCount?: number;
+    reviewStatus?: string;
+    ballotRkey: string;
+  };
+}> {
+  const authenticatedFetch = getAuthenticatedFetch();
+  const res = await authenticatedFetch(
+    `/api/xrpc/app.ch.poltr.comment.get?uri=${encodeURIComponent(uri)}`
+  );
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function listComments(argumentUri: string): Promise<CommentWithMetadata[]> {
   const authenticatedFetch = getAuthenticatedFetch();
   const res = await authenticatedFetch(
@@ -246,6 +268,35 @@ export async function initiateEidVerification(): Promise<{
     throw new Error(error.message || 'Failed to initiate verification');
   }
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Activity API
+// ---------------------------------------------------------------------------
+
+export async function listActivity(
+  ballotRkey: string,
+  filter?: 'all' | 'comments' | 'arguments',
+  cursor?: string,
+  limit = 30,
+): Promise<{ activities: ActivityItem[]; cursor?: string }> {
+  const authenticatedFetch = getAuthenticatedFetch();
+  const params = new URLSearchParams({ ballot_rkey: ballotRkey, limit: String(limit) });
+  if (filter && filter !== 'all') params.set('filter', filter);
+  if (cursor) params.set('cursor', cursor);
+  const res = await authenticatedFetch(`/api/xrpc/app.ch.poltr.activity.list?${params.toString()}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function markActivitySeen(uris: string[]): Promise<void> {
+  if (uris.length === 0) return;
+  const authenticatedFetch = getAuthenticatedFetch();
+  await authenticatedFetch('/api/xrpc/app.ch.poltr.activity.markSeen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris }),
+  });
 }
 
 // ---------------------------------------------------------------------------

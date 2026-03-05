@@ -1,7 +1,7 @@
 {
-  "name": "poltr-cms",
+  "name": "smartvote-social-cms",
   "version": "1.0.0",
-  "description": "POLTR Content Management System",
+  "description": "Smartvote Social - Content Management System",
   "license": "MIT",
   "type": "module",
   "scripts": {

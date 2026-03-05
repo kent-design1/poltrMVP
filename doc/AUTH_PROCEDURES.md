@@ -72,7 +72,7 @@ User                    Frontend              AppView                  PDS
 
 1. `POST /xrpc/ch.poltr.auth.register` -- AppView checks the email is not already in `auth_creds`, generates a token (expires in 30 min), inserts it into `auth_pending_registrations`, and sends a confirmation email.
 2. `POST /xrpc/ch.poltr.auth.verifyRegistration` -- AppView looks up the token, checks expiry, deletes the pending row, then:
-   - Generates a random handle (`userXXXXXX.poltr.info`) and a 64-char random password.
+   - Generates a random handle (`userXXXXXX.id.poltr.ch`) and a 64-char random password.
    - Calls the PDS admin API to create the account.
    - Encrypts the password with the master key and stores it in `auth_creds`.
    - Creates a session (see below).
