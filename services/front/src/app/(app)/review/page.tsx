@@ -137,8 +137,8 @@ export default function ReviewDashboard() {
   if (!isAuthenticated || !user) return null;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Peer Review</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight pt-5">Peer Review</h1>
 
       {error && (
         <Alert variant="destructive">
@@ -180,7 +180,7 @@ export default function ReviewDashboard() {
               {/* Argument preview */}
               <div
                 className="p-4 bg-muted rounded-md"
-                style={{ borderLeft: `4px solid ${inv.argument.type === 'PRO' ? '#4caf50' : '#ef5350'}` }}
+                style={{ borderLeft: `4px solid ${inv.argument.type === 'PRO' ? 'var(--green)' : 'var(--red)'}` }}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <ProContraBadge type={inv.argument.type?.toLowerCase()} variant="soft" />

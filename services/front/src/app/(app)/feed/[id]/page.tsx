@@ -16,7 +16,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/spinner';
 import { ProContraBadge } from '@/components/pro-contra-badge';
-import { FullWidthDivider } from '@/components/full-width-divider';
+
+import { ViewToggle } from '@/components/view-toggle';
 import {
   Dialog,
   DialogContent,
@@ -546,18 +547,17 @@ export default function BallotFeed() {
 
   return (
     <div className="space-y-5">
-      {/* Header nav */}
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => router.push('/ballots')}>
-          &larr; Back to Ballots
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => router.push(`/ballots/${id}`)}>
-          Classic View
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => router.push('/review')}>
-          Peer Review
-        </Button>
-      </div>
+      {/* Breadcrumb + view toggle */}
+      <nav className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <a href="/ballots" onClick={(e) => { e.preventDefault(); router.push('/ballots'); }} className="shrink-0 hover:text-foreground transition-colors">
+            Ballots
+          </a>
+          <span className="shrink-0">/</span>
+          <span className="text-foreground font-medium truncate">{ballot?.record.title ?? '...'}</span>
+        </div>
+        <ViewToggle active="feed" ballotId={id} />
+      </nav>
 
       {/* Ballot loading / error */}
       {ballotLoading && (
@@ -594,7 +594,7 @@ export default function BallotFeed() {
                     onClick={handleToggleLike}
                     title={ballot.viewer?.like ? 'Unlike' : 'Like'}
                     className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
-                    style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
+                    style={{ color: ballot.viewer?.like ? 'var(--brand)' : '#b0bec5' }}
                   >
                     {ballot.viewer?.like ? '\u2764' : '\u2661'}
                     {(ballot.likeCount ?? 0) > 0 && (
@@ -638,7 +638,7 @@ export default function BallotFeed() {
             </CardContent>
           </Card>
 
-          <FullWidthDivider className="my-5" />
+          <div className="border-b border-border my-5" />
 
           {/* Activity toolbar */}
           <div className="sticky top-14 z-10 bg-card rounded-lg px-4 py-2.5 shadow-sm flex items-center justify-between gap-3 border">

@@ -1,106 +1,98 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/AuthContext';
-import { listBallots } from '@/lib/agent';
-import { likeBallot, unlikeBallot } from '@/lib/ballots';
-import { formatDate } from '@/lib/utils';
-import type { BallotWithMetadata } from '@/types/ballots';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Spinner } from '@/components/spinner';
-import { Separator } from '@/components/ui/separator';
-import { FullWidthDivider } from '@/components/full-width-divider';
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/AuthContext";
+import { listBallots } from "@/lib/agent";
+import { likeBallot, unlikeBallot } from "@/lib/ballots";
+import { formatDate } from "@/lib/utils";
+import type { BallotWithMetadata } from "@/types/ballots";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { MessageCircle } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 
-function BallotCard({ ballot, onLike, onClick }: {
+function BallotCard({
+  ballot,
+  onLike,
+  onClick,
+}: {
   ballot: BallotWithMetadata;
   onLike: (b: BallotWithMetadata) => void;
   onClick: () => void;
 }) {
   return (
-    <Card
-      className="cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
+    <div
+      className="bg-card border border-border rounded-[var(--r)] p-5 cursor-pointer card-hover"
       onClick={onClick}
     >
-      <CardContent className="pt-6">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="font-semibold text-lg leading-tight">
-            {ballot.record.title}
-          </h3>
-          <div className="flex items-center gap-2 shrink-0 ml-2">
-            {ballot.record.language && (
-              <Badge variant="secondary">{ballot.record.language}</Badge>
-            )}
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onLike(ballot);
-              }}
-              title={ballot.viewer?.like ? 'Unlike' : 'Like'}
-              className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
-              style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
-            >
-              {ballot.viewer?.like ? '\u2764' : '\u2661'}
-              {(ballot.likeCount ?? 0) > 0 && (
-                <span className="text-xs ml-1">{ballot.likeCount}</span>
-              )}
-            </button>
-          </div>
-        </div>
+      <div className="flex justify-between items-start mb-2">
+        <h3 className="font-bold text-lg leading-tight tracking-tight">
+          {ballot.record.title}
+        </h3>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onLike(ballot);
+          }}
+          className="like-pill shrink-0 ml-2"
+          data-liked={ballot.viewer?.like ? "true" : "false"}
+        >
+          {"\u2764"}
+          {"\u00a0"}
+          {ballot.likeCount ?? 0}
+        </button>
+      </div>
 
-        {ballot.record.topic && (
-          <p className="text-sm text-muted-foreground mb-2">
-            <strong>Topic:</strong> {ballot.record.topic}
-          </p>
-        )}
+      {ballot.record.topic && (
+        <span className="tag eyebrow mb-2">{ballot.record.topic}</span>
+      )}
 
-        {ballot.record.text && (
-          <p className="text-sm text-muted-foreground mb-3 leading-normal line-clamp-3">
-            {ballot.record.text}
-          </p>
-        )}
+      {ballot.record.text && (
+        <p className="text-[12.5px] text-[var(--text-mid)] mb-3 leading-relaxed line-clamp-3">
+          {ballot.record.text}
+        </p>
+      )}
 
-        <Separator className="my-4" />
-
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-muted-foreground">
-            <strong>Vote Date:</strong><br />
-            {formatDate(ballot.record.voteDate)}
-          </div>
-          {ballot.record.officialRef && (
-            <span className="text-xs text-muted-foreground">
-              Ref: (1) {ballot.record.officialRef}
+      <div className="flex justify-between items-center pt-3 border-t border-border">
+        <span className="label">{formatDate(ballot.record.voteDate)}</span>
+        <div className="flex gap-1.5">
+          {(ballot.argumentCount ?? 0) > 0 && (
+            <span className="tag">{ballot.argumentCount} Argumente</span>
+          )}
+          {(ballot.commentCount ?? 0) > 0 && (
+            <span className="tag">
+              <MessageCircle className="h-3 w-3" /> {ballot.commentCount}
             </span>
           )}
         </div>
-
-        <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-          {(ballot.argumentCount ?? 0) > 0 && (
-            <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
-          )}
-          {(ballot.commentCount ?? 0) > 0 && (
-            <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-function BallotGrid({ ballots, onLike, router }: {
+function BallotGrid({
+  ballots,
+  onLike,
+  router,
+}: {
   ballots: BallotWithMetadata[];
   onLike: (b: BallotWithMetadata) => void;
   router: ReturnType<typeof useRouter>;
 }) {
   if (ballots.length === 0) return null;
   return (
-    <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
+    <div
+      className="grid"
+      style={{
+        gap: "var(--gap)",
+        gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+      }}
+    >
       {ballots.map((ballot) => {
-        const rkey = ballot.uri.split('/').pop();
+        const rkey = ballot.uri.split("/").pop();
         return (
           <BallotCard
             key={ballot.uri}
@@ -119,12 +111,12 @@ export default function BallotSearch() {
   const router = useRouter();
   const [ballots, setBallots] = useState<BallotWithMetadata[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) {
-      router.push('/');
+      router.push("/");
       return;
     }
     loadBallots();
@@ -134,14 +126,14 @@ export default function BallotSearch() {
     if (!user) return;
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const ballots: BallotWithMetadata[] = await listBallots()
+      const ballots: BallotWithMetadata[] = await listBallots();
       setBallots(ballots || []);
     } catch (err) {
-      console.error('Error loading ballots:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load ballots');
+      console.error("Error loading ballots:", err);
+      setError(err instanceof Error ? err.message : "Failed to load ballots");
     } finally {
       setLoading(false);
     }
@@ -156,10 +148,10 @@ export default function BallotSearch() {
           ? {
               ...b,
               likeCount: (b.likeCount ?? 0) + (isLiked ? -1 : 1),
-              viewer: isLiked ? undefined : { like: '__pending__' },
+              viewer: isLiked ? undefined : { like: "__pending__" },
             }
-          : b
-      )
+          : b,
+      ),
     );
 
     try {
@@ -167,19 +159,19 @@ export default function BallotSearch() {
         await unlikeBallot(ballot.viewer!.like!);
         setBallots((prev) =>
           prev.map((b) =>
-            b.uri === ballot.uri ? { ...b, viewer: undefined } : b
-          )
+            b.uri === ballot.uri ? { ...b, viewer: undefined } : b,
+          ),
         );
       } else {
         const likeUri = await likeBallot(ballot.uri, ballot.cid);
         setBallots((prev) =>
           prev.map((b) =>
-            b.uri === ballot.uri ? { ...b, viewer: { like: likeUri } } : b
-          )
+            b.uri === ballot.uri ? { ...b, viewer: { like: likeUri } } : b,
+          ),
         );
       }
     } catch (err) {
-      console.error('Failed to toggle like:', err);
+      console.error("Failed to toggle like:", err);
       setBallots((prev) =>
         prev.map((b) =>
           b.uri === ballot.uri
@@ -188,8 +180,8 @@ export default function BallotSearch() {
                 likeCount: (b.likeCount ?? 0) + (isLiked ? 1 : -1),
                 viewer: isLiked ? { like: ballot.viewer!.like! } : undefined,
               }
-            : b
-        )
+            : b,
+        ),
       );
     }
   }, []);
@@ -204,19 +196,26 @@ export default function BallotSearch() {
   }
   if (!isAuthenticated || !user) return null;
 
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = ballots.filter(b => b.record.voteDate >= today);
-  const archived = ballots.filter(b => b.record.voteDate < today);
+  const today = new Date().toISOString().split("T")[0];
+  const upcoming = ballots.filter((b) => b.record.voteDate >= today);
+  const archived = ballots.filter((b) => b.record.voteDate < today);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Swiss Ballot Entries</h1>
+    <div
+      className=""
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "calc(var(--gap) * 2)",
+      }}
+    >
+      <h1 className="text-2xl font-bold tracking-tight pt-5">Abstimmungen</h1>
 
       {loading && (
         <Card>
           <CardContent className="flex items-center justify-center py-10 gap-3">
             <Spinner />
-            <span className="text-muted-foreground">Loading ballots...</span>
+            <span className="text-muted-foreground">Lade Abstimmungen...</span>
           </CardContent>
         </Card>
       )}
@@ -224,7 +223,9 @@ export default function BallotSearch() {
       {error && (
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between">
-            <span><strong>Error:</strong> {error}</span>
+            <span>
+              <strong>Error:</strong> {error}
+            </span>
             <Button variant="destructive" size="sm" onClick={loadBallots}>
               Retry
             </Button>
@@ -235,46 +236,72 @@ export default function BallotSearch() {
       {!loading && !error && ballots.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center">
-            <p className="text-muted-foreground text-lg">No ballot entries found.</p>
+            <p className="text-muted-foreground text-lg">
+              Keine Abstimmungen gefunden.
+            </p>
           </CardContent>
         </Card>
       )}
 
       {!loading && ballots.length > 0 && (
         <>
-          {/* Upcoming ballots */}
+          {/* Upcoming */}
           <section>
-            <h2 className="text-lg font-semibold mb-4">
-              Upcoming
-              {upcoming.length > 0 && (
-                <span className="text-muted-foreground font-normal ml-2 text-sm">
-                  ({upcoming.length})
-                </span>
-              )}
-            </h2>
+            <div className="section-bar">
+              <h2>
+                Aktuell
+                {upcoming.length > 0 && (
+                  <span className="text-[var(--text-faint)] font-normal ml-2 text-sm">
+                    ({upcoming.length})
+                  </span>
+                )}
+              </h2>
+            </div>
             {upcoming.length > 0 ? (
-              <BallotGrid ballots={upcoming} onLike={handleToggleLike} router={router} />
+              <BallotGrid
+                ballots={upcoming}
+                onLike={handleToggleLike}
+                router={router}
+              />
             ) : (
-              <p className="text-sm text-muted-foreground">No upcoming ballots.</p>
+              <div
+                className="grid"
+                style={{
+                  gap: "var(--gap)",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                }}
+              >
+                <p className="text-sm text-[var(--text-mid)] py-10">
+                  Keine aktuellen Abstimmungen.
+                </p>
+              </div>
             )}
           </section>
 
-          <FullWidthDivider />
+          {/* <div className="border-b border-border" /> */}
 
-          {/* Archived ballots */}
+          {/* Archived */}
           <section>
-            <h2 className="text-lg font-semibold mb-4">
-              Archiviert
-              {archived.length > 0 && (
-                <span className="text-muted-foreground font-normal ml-2 text-sm">
-                  ({archived.length})
-                </span>
-              )}
-            </h2>
+            <div className="section-bar">
+              <h2>
+                Archiviert
+                {archived.length > 0 && (
+                  <span className="text-[var(--text-faint)] font-normal ml-2 text-sm">
+                    ({archived.length})
+                  </span>
+                )}
+              </h2>
+            </div>
             {archived.length > 0 ? (
-              <BallotGrid ballots={archived} onLike={handleToggleLike} router={router} />
+              <BallotGrid
+                ballots={archived}
+                onLike={handleToggleLike}
+                router={router}
+              />
             ) : (
-              <p className="text-sm text-muted-foreground">No archived ballots.</p>
+              <p className="text-sm text-[var(--text-mid)]">
+                Keine archivierten Abstimmungen.
+              </p>
             )}
           </section>
         </>

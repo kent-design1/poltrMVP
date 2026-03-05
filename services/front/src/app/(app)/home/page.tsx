@@ -106,8 +106,8 @@ function HomeContent() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Hello {user.displayName}!</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight pt-5">Hello {user.displayName}!</h1>
 
       <Card>
         <CardContent className="pt-6">
@@ -120,7 +120,7 @@ function HomeContent() {
 
       <div className="flex flex-wrap gap-3">
         <Button onClick={() => router.push("/ballots")}>
-          View Proposals
+          See Ballots
         </Button>
 
         {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" && (

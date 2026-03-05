@@ -31,11 +31,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppNav />
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6 md:py-8">
+      <main className="mx-auto w-full flex-1" style={{ maxWidth: 'var(--page-max)', padding: '0 var(--page-px) 100px' }}>
         {children}
       </main>
-      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">
-        <div className="mx-auto max-w-7xl px-4 md:px-6">
+      <footer className="border-t border-border py-6 text-center label">
+        <div className="mx-auto" style={{ maxWidth: 'var(--page-max)', padding: '0 var(--page-px)' }}>
           <a href="/impressum" className="hover:text-foreground transition-colors">
             Impressum
           </a>

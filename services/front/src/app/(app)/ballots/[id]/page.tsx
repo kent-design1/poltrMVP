@@ -7,42 +7,55 @@ import { getBallot, listArguments } from '@/lib/agent';
 import { likeBallot, unlikeBallot } from '@/lib/ballots';
 import { formatDate } from '@/lib/utils';
 import type { BallotWithMetadata, ArgumentWithMetadata } from '@/types/ballots';
+import { MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/spinner';
 import { ReviewStatusBadge } from '@/components/pro-contra-badge';
-import { FullWidthDivider } from '@/components/full-width-divider';
+import { ViewToggle } from '@/components/view-toggle';
 
-function ArgumentCard({ arg, onClick, borderColor }: { arg: ArgumentWithMetadata; onClick: () => void; borderColor: string }) {
+function ArgumentCard({
+  arg,
+  index,
+  type,
+  onClick,
+}: {
+  arg: ArgumentWithMetadata;
+  index: number;
+  type: 'PRO' | 'CONTRA';
+  onClick: () => void;
+}) {
+  const borderColor = type === 'PRO' ? 'var(--green)' : 'var(--red)';
   return (
-    <Card
-      className="cursor-pointer hover:shadow-md transition-shadow"
-      style={{ borderLeft: `4px solid ${borderColor}` }}
+    <div
+      className="bg-card border border-border rounded-[var(--r)] p-4 cursor-pointer card-hover relative overflow-hidden animate-fade-up"
+      style={{ borderLeft: `3px solid ${borderColor}` }}
       onClick={onClick}
     >
-      <CardContent className="pt-4 pb-4">
-        <div className="flex justify-between items-start mb-2">
-          <h4 className="m-0 text-sm font-medium">
-            {arg.record.title}
-          </h4>
-          <ReviewStatusBadge status={arg.reviewStatus} />
-        </div>
-        <p className="m-0 mb-2 text-sm text-muted-foreground leading-normal">
-          {arg.record.body}
-        </p>
-        <div className="flex gap-3 text-xs text-muted-foreground">
-          {(arg.likeCount ?? 0) > 0 && (
-            <span>{'\u2661'} {arg.likeCount}</span>
-          )}
-          {(arg.commentCount ?? 0) > 0 && (
-            <span>{arg.commentCount} comment{arg.commentCount !== 1 ? 's' : ''}</span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <h4 className="text-[13.5px] font-bold leading-snug tracking-tight">
+          {arg.record.title}
+        </h4>
+        <span className="text-[11px] font-semibold text-[var(--text-faint)] shrink-0 mt-0.5">
+          #{String(index + 1).padStart(2, '0')}
+        </span>
+      </div>
+      <p className="text-[12.5px] leading-relaxed text-[var(--text-mid)] mb-3 line-clamp-3">
+        {arg.record.body}
+      </p>
+      <div className="flex items-center gap-1.5">
+        {(arg.commentCount ?? 0) > 0 && (
+          <span className="tag">
+            <MessageCircle className="h-3 w-3" /> {arg.commentCount}
+          </span>
+        )}
+        <ReviewStatusBadge status={arg.reviewStatus} />
+        <span className="ml-auto text-[11.5px] text-[var(--text-faint)] rounded-[var(--r-full)] px-2.5 py-0.5 font-medium border border-transparent hover:border-[var(--line)] hover:bg-[var(--surface-up)] hover:text-[var(--text-mid)] transition-all cursor-pointer">
+          {'\u2191'} Hilfreich
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -134,20 +147,22 @@ export default function BallotDetail() {
 
   const proArgs = arguments_.filter((a) => a.record.type === 'PRO');
   const contraArgs = arguments_.filter((a) => a.record.type === 'CONTRA');
+  const totalArgs = proArgs.length + contraArgs.length;
+  const proPercent = totalArgs > 0 ? Math.round(proArgs.length / totalArgs * 100) : 50;
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => router.push('/ballots')}>
-          &larr; Back to Ballots
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => router.push(`/feed/${id}`)}>
-          Feed View
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => router.push('/review')}>
-          Peer Review
-        </Button>
-      </div>
+    <div className="max-w-[var(--page-max)] mx-auto" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 pt-5 text-xs label">
+        <a href="/ballots" onClick={(e) => { e.preventDefault(); router.push('/ballots'); }} className="text-[var(--text-mid)] hover:text-[var(--text)] transition-colors no-underline">
+          Ballots
+        </a>
+        <span className="opacity-35">/</span>
+        <span className="text-[var(--text)] font-semibold truncate">{ballot?.record.title ?? '...'}</span>
+        <div className="ml-auto">
+          <ViewToggle active="columns" ballotId={id} />
+        </div>
+      </nav>
 
       {loading && (
         <Card>
@@ -169,113 +184,127 @@ export default function BallotDetail() {
 
       {!loading && ballot && (
         <>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-start mb-4">
-                <h1 className="m-0 text-2xl font-bold">{ballot.record.title}</h1>
-                <div className="flex items-center gap-2 shrink-0 ml-2">
-                  {ballot.record.language && (
-                    <Badge variant="secondary">{ballot.record.language}</Badge>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleToggleLike}
-                    title={ballot.viewer?.like ? 'Unlike' : 'Like'}
-                    className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
-                    style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
-                  >
-                    {ballot.viewer?.like ? '\u2764' : '\u2661'}
-                    {(ballot.likeCount ?? 0) > 0 && (
-                      <span className="text-xs ml-1">{ballot.likeCount}</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
+          {/* Hero card */}
+          <div className="bg-card border border-border rounded-[calc(var(--r)+6px)] px-8 py-8 md:px-11 md:py-9 animate-fade-up overflow-hidden">
+            {/* Eyebrow */}
+            <div className="flex items-center gap-2 mb-3.5">
               {ballot.record.topic && (
-                <p className="text-sm text-muted-foreground mb-2">
-                  <strong>Topic:</strong> {ballot.record.topic}
-                </p>
+                <span className="tag eyebrow">{ballot.record.topic}</span>
               )}
+              <span className="label">{formatDate(ballot.record.voteDate)}</span>
+            </div>
 
-              {ballot.record.text && (
-                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                  {ballot.record.text}
-                </p>
-              )}
-
-              <Separator className="my-4" />
-
-              <div className="flex justify-between items-center">
-                <div className="text-sm text-muted-foreground">
-                  <strong>Vote Date:</strong> {formatDate(ballot.record.voteDate)}
-                </div>
-                {ballot.record.officialRef && (
-                  <span className="text-xs text-muted-foreground">Ref: {ballot.record.officialRef}</span>
-                )}
-              </div>
-
-              <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-                {(ballot.argumentCount ?? 0) > 0 && (
-                  <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
-                )}
-                {(ballot.commentCount ?? 0) > 0 && (
-                  <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {arguments_.length > 0 && (
-            <div>
-              <FullWidthDivider className="my-6" />
-              <h2 className="text-xl font-semibold mb-4">Arguments</h2>
-              <div className="grid grid-cols-2 gap-5">
-                <div>
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-green-800 mb-3">
-                    Pro ({proArgs.length})
-                  </h3>
-                  <div className="flex flex-col gap-3">
-                    {proArgs.map((arg) => (
-                      <ArgumentCard
-                        key={arg.uri}
-                        arg={arg}
-                        borderColor="#4caf50"
-                        onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
-                      />
-                    ))}
-                    {proArgs.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No pro arguments yet.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-red-800 mb-3">
-                    Contra ({contraArgs.length})
-                  </h3>
-                  <div className="flex flex-col gap-3">
-                    {contraArgs.map((arg) => (
-                      <ArgumentCard
-                        key={arg.uri}
-                        arg={arg}
-                        borderColor="#ef5350"
-                        onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
-                      />
-                    ))}
-                    {contraArgs.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No contra arguments yet.</p>
-                    )}
-                  </div>
+            {/* Main: title + right actions */}
+            <div className="flex justify-between items-start gap-6 mb-5">
+              <h1 className="text-4xl md:text-[44px] font-bold tracking-tight leading-[0.92]">
+                {ballot.record.title}
+              </h1>
+              <div className="flex flex-col items-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleToggleLike}
+                  className="like-pill"
+                  data-liked={ballot.viewer?.like ? 'true' : 'false'}
+                >
+                  {'\u2764'}{'\u00a0'}{ballot.likeCount ?? 0}
+                </button>
+                <div className="flex gap-1.5">
+                  {(ballot.argumentCount ?? 0) > 0 && (
+                    <span className="tag">{ballot.argumentCount} Argumente</span>
+                  )}
+                  {(ballot.commentCount ?? 0) > 0 && (
+                    <span className="tag">{ballot.commentCount} Kommentare</span>
+                  )}
                 </div>
               </div>
             </div>
-          )}
+
+            {ballot.record.text && (
+              <p className="text-sm text-[var(--text-mid)] leading-relaxed mb-5 max-w-2xl">
+                {ballot.record.text}
+              </p>
+            )}
+
+            {/* Ratio bar */}
+            {totalArgs > 0 && (
+              <div className="mt-1">
+                <div className="flex justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--green)]">
+                    <span className="inline-block size-[7px] rounded-sm bg-[var(--green)]" />
+                    Pro — {proArgs.length}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--red)]">
+                    Contra — {contraArgs.length}
+                    <span className="inline-block size-[7px] rounded-sm bg-[var(--red)]" />
+                  </div>
+                </div>
+                <div className="h-[5px] rounded-[var(--r-full)] bg-[var(--surface-up)] border border-border overflow-hidden flex">
+                  <div
+                    className="h-full rounded-l-[var(--r-full)] bg-[var(--green)] transition-all duration-500"
+                    style={{ width: `${proPercent}%` }}
+                  />
+                  <div
+                    className="h-full rounded-r-[var(--r-full)] bg-[var(--red)] transition-all duration-500"
+                    style={{ width: `${100 - proPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section bar */}
+          <div className="section-bar animate-fade-up" style={{ animationDelay: '0.1s' }}>
+            <h2>Argumente</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 animate-fade-up" style={{ gap: 'var(--gap)', animationDelay: '0.15s' }}>
+            {/* Pro column */}
+            <div className="flex flex-col" style={{ gap: 'calc(var(--gap) - 6px)' }}>
+              <div className="col-pill pro">
+                <span className="eyebrow text-[var(--green)]">Pro</span>
+                <span className="text-[11px] font-medium text-[var(--green)] opacity-60">{proArgs.length} Argumente</span>
+              </div>
+              {proArgs.map((arg, i) => (
+                <ArgumentCard
+                  key={arg.uri}
+                  arg={arg}
+                  index={i}
+                  type="PRO"
+                  onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
+                />
+              ))}
+              {proArgs.length === 0 && (
+                <p className="text-sm text-[var(--text-mid)] px-1 py-4">Noch keine Pro-Argumente.</p>
+              )}
+              <button type="button" className="btn-dashed">+ Argument hinzufügen</button>
+            </div>
+
+            {/* Contra column */}
+            <div className="flex flex-col" style={{ gap: 'calc(var(--gap) - 6px)' }}>
+              <div className="col-pill contra">
+                <span className="eyebrow text-[var(--red)]">Contra</span>
+                <span className="text-[11px] font-medium text-[var(--red)] opacity-60">{contraArgs.length} Argumente</span>
+              </div>
+              {contraArgs.map((arg, i) => (
+                <ArgumentCard
+                  key={arg.uri}
+                  arg={arg}
+                  index={i}
+                  type="CONTRA"
+                  onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
+                />
+              ))}
+              {contraArgs.length === 0 && (
+                <p className="text-sm text-[var(--text-mid)] px-1 py-4">Noch keine Contra-Argumente.</p>
+              )}
+              <button type="button" className="btn-dashed">+ Argument hinzufügen</button>
+            </div>
+          </div>
 
           {arguments_.length === 0 && !loading && (
             <Card>
               <CardContent className="py-10 text-center text-muted-foreground">
-                No arguments have been submitted for this ballot yet.
+                Es wurden noch keine Argumente eingereicht.
               </CardContent>
             </Card>
           )}

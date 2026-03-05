@@ -89,7 +89,7 @@ function CommentNode({
             <button
               onClick={(e) => { e.stopPropagation(); onLikeToggle(comment); }}
               className="bg-transparent border-none p-0 cursor-pointer text-xs"
-              style={{ color: liked ? '#d81b60' : '#8e8e8e' }}
+              style={{ color: liked ? 'var(--brand)' : '#8e8e8e' }}
             >
               {liked ? '\u2764' : '\u2661'} {(comment.likeCount ?? 0) > 0 ? comment.likeCount : ''}
             </button>
