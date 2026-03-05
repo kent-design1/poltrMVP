@@ -5,6 +5,11 @@ import { useAuth } from "@/lib/AuthContext";
 import { useEffect, useState, Suspense } from "react";
 import { initiateEidVerification } from "@/lib/agent";
 import { useAppPassword } from "@/lib/useAppPassword";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Spinner } from "@/components/spinner";
+import { Copy, Check } from "lucide-react";
 
 function CopyField({
   label,
@@ -30,23 +35,24 @@ function CopyField({
       style={{ wordBreak: breakAll ? "break-all" : undefined }}
     >
       <strong>{label}:</strong>
-      <code className="bg-white px-2 py-1 rounded font-mono flex-1">
+      <code className="bg-muted px-2 py-1 rounded font-mono flex-1 text-sm">
         {value}
       </code>
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={handleCopy}
         title={copied ? "Copied!" : `Copy ${label.toLowerCase()}`}
-        className="bg-transparent border-none cursor-pointer p-1 text-base leading-none shrink-0"
-        style={{ opacity: copied ? 1 : 0.6 }}
+        className="h-8 w-8 shrink-0"
       >
-        {copied ? "\u2705" : "\uD83D\uDCCB"}
-      </button>
+        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      </Button>
     </p>
   );
 }
 
 function HomeContent() {
-  const { user, isAuthenticated, logout, loading } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -56,12 +62,9 @@ function HomeContent() {
     handleCreateAppPassword,
   } = useAppPassword();
   const [verificationLoading, setVerificationLoading] = useState(false);
-  const [verificationError, setVerificationError] = useState<string | null>(
-    null,
-  );
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verificationSuccess, setVerificationSuccess] = useState(false);
 
-  // Check for verification callback params
   useEffect(() => {
     if (searchParams.get("verified") === "true") {
       setVerificationSuccess(true);
@@ -79,18 +82,14 @@ function HomeContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen font-sans">
-        Restoring session...
+      <div className="flex items-center justify-center min-h-[50vh] gap-3">
+        <Spinner />
+        <span className="text-muted-foreground">Restoring session...</span>
       </div>
     );
   }
 
   if (!user) return null;
-
-  const handleLogout = () => {
-    logout();
-    router.push("/");
-  };
 
   const handleStartVerification = async () => {
     setVerificationLoading(true);
@@ -107,98 +106,79 @@ function HomeContent() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-5">
-      <h1>Hello {user.displayName}! You did it.</h1>
-      <div className="mt-5 p-5 bg-gray-100 rounded-lg text-center">
-        <p>
-          <strong>DID:</strong> {user.did}
-        </p>
-        <p>
-          <strong>Handle:</strong> {user.handle}
-        </p>
-      </div>
+    <div className="max-w-2xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Hello {user.displayName}!</h1>
 
-      <div className="mt-8 flex gap-4">
-        <button
-          onClick={() => router.push("/ballots")}
-          className="px-6 py-3 text-base bg-blue-500 text-white border-none rounded cursor-pointer"
-        >
+      <Card>
+        <CardContent className="pt-6">
+          <div className="space-y-1 text-sm">
+            <p><strong>DID:</strong> <span className="font-mono text-muted-foreground">{user.did}</span></p>
+            <p><strong>Handle:</strong> <span className="font-mono text-muted-foreground">{user.handle}</span></p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={() => router.push("/ballots")}>
           View Proposals
-        </button>
+        </Button>
 
         {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" && (
-          <button
+          <Button
+            variant="secondary"
             onClick={handleStartVerification}
             disabled={verificationLoading}
-            className="px-6 py-3 text-base bg-blue-500 text-white border-none rounded"
-            style={{
-              cursor: verificationLoading ? "not-allowed" : "pointer",
-              opacity: verificationLoading ? 0.7 : 1,
-            }}
           >
             {verificationLoading ? "Starting..." : "swiyu-Verification"}
-          </button>
+          </Button>
         )}
 
         {process.env.NEXT_PUBLIC_APP_PASSWORD_ENABLED === "true" && (
-          <button
+          <Button
+            variant="secondary"
             onClick={handleCreateAppPassword}
             disabled={appPasswordLoading}
-            className="px-6 py-3 text-base bg-blue-500 text-white border-none rounded"
-            style={{
-              cursor: appPasswordLoading ? "not-allowed" : "pointer",
-              opacity: appPasswordLoading ? 0.7 : 1,
-            }}
           >
             {appPasswordLoading ? "Creating..." : "Create App Password"}
-          </button>
+          </Button>
         )}
-
-        <button
-          onClick={handleLogout}
-          className="px-6 py-3 text-base bg-red-500 text-white border-none rounded cursor-pointer"
-        >
-          Logout
-        </button>
       </div>
 
-      {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" &&
-        verificationSuccess && (
-          <div className="mt-5 p-4 bg-green-50 border border-green-500 rounded-lg text-green-800 max-w-sm text-center">
+      {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" && verificationSuccess && (
+        <Alert>
+          <AlertDescription>
             E-ID verification successful! Your account is now verified.
-          </div>
-        )}
+          </AlertDescription>
+        </Alert>
+      )}
 
-      {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" &&
-        verificationError && (
-          <div className="mt-5 p-4 bg-red-50 border border-red-400 rounded-lg text-red-800 max-w-sm text-center">
-            {verificationError}
-          </div>
-        )}
+      {process.env.NEXT_PUBLIC_EID_VERIFICATION_ENABLED === "true" && verificationError && (
+        <Alert variant="destructive">
+          <AlertDescription>{verificationError}</AlertDescription>
+        </Alert>
+      )}
 
-      {process.env.NEXT_PUBLIC_APP_PASSWORD_ENABLED === "true" &&
-        appPasswordError && (
-          <div className="mt-5 p-4 bg-red-50 border border-red-400 rounded-lg text-red-800 max-w-sm text-center">
-            {appPasswordError}
-          </div>
-        )}
+      {process.env.NEXT_PUBLIC_APP_PASSWORD_ENABLED === "true" && appPasswordError && (
+        <Alert variant="destructive">
+          <AlertDescription>{appPasswordError}</AlertDescription>
+        </Alert>
+      )}
 
-      {process.env.NEXT_PUBLIC_APP_PASSWORD_ENABLED === "true" &&
-        appPassword && (
-          <div className="mt-5 p-5 bg-green-50 border border-green-500 rounded-lg max-w-sm">
-            <h3 className="m-0 mb-3 text-green-800">
-              App Password Created!
-            </h3>
+      {process.env.NEXT_PUBLIC_APP_PASSWORD_ENABLED === "true" && appPassword && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg text-green-800">App Password Created!</CardTitle>
+          </CardHeader>
+          <CardContent>
             <CopyField
               label="PDS"
-              value={
-                process.env.NEXT_PUBLIC_PDS_URL || "https://pds2.poltr.info"
-              }
+              value={process.env.NEXT_PUBLIC_PDS_URL || "https://pds2.poltr.info"}
             />
             <CopyField label="Handle" value={user.handle} />
             <CopyField label="Password" value={appPassword.password} breakAll />
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -207,8 +187,8 @@ export default function Home() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center min-h-screen font-sans">
-          Loading...
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Spinner />
         </div>
       }
     >

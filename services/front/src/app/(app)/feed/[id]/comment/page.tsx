@@ -1,33 +1,24 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, forwardRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getComment, listComments, createComment } from '@/lib/agent';
 import { likeContent, unlikeContent } from '@/lib/ballots';
 import { formatRelativeTime } from '@/lib/utils';
 import type { CommentWithMetadata } from '@/types/ballots';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Spinner } from '@/components/spinner';
+import { ProContraBadge } from '@/components/pro-contra-badge';
+import { CantonAvatar, BskyAvatar } from '@/components/canton-avatar';
+import { ReplyInput } from '@/components/reply-input';
 
 // ---------------------------------------------------------------------------
 // Thread helpers
 // ---------------------------------------------------------------------------
-
-function buildThreadTree(comments: CommentWithMetadata[]): CommentWithMetadata[] {
-  const map = new Map<string, CommentWithMetadata>();
-  const roots: CommentWithMetadata[] = [];
-  for (const c of comments) {
-    map.set(c.uri, { ...c, replies: [] });
-  }
-  for (const c of comments) {
-    const node = map.get(c.uri)!;
-    if (c.parentUri && map.has(c.parentUri)) {
-      map.get(c.parentUri)!.replies!.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
-}
 
 function buildAncestorChain(
   commentMap: Map<string, CommentWithMetadata>,
@@ -45,89 +36,7 @@ function buildAncestorChain(
 }
 
 // ---------------------------------------------------------------------------
-// Canton avatar
-// ---------------------------------------------------------------------------
-
-function CantonAvatar({ canton, color, size = 32 }: { canton?: string; color?: string; size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white font-bold leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: color || '#90a4ae',
-        fontSize: size * 0.4,
-      }}
-    >
-      {canton ? canton.toUpperCase() : '?'}
-    </div>
-  );
-}
-
-function BskyAvatar({ size = 28 }: { size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: '#1185fe',
-        fontSize: size * 0.55,
-      }}
-    >
-      {'\ud83e\udd8b'}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Reply input
-// ---------------------------------------------------------------------------
-
-const ReplyInput = forwardRef<HTMLTextAreaElement, {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  submitting: boolean;
-  placeholder: string;
-}>(function ReplyInput({ value, onChange, onSubmit, submitting, placeholder }, ref) {
-  const [focused, setFocused] = useState(false);
-
-  return (
-    <div className="flex gap-2 items-end py-1.5">
-      <textarea
-        ref={ref}
-        rows={focused ? 3 : 1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => { if (!value) setFocused(false); }}
-        placeholder={placeholder}
-        className="flex-1 px-2.5 py-2 text-xs border border-gray-300 rounded-md resize-none outline-none font-[inherit]"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
-      {(focused || value) && (
-        <button
-          onClick={onSubmit}
-          disabled={!value.trim() || submitting}
-          className="px-3.5 py-2 text-xs bg-blue-500 text-white border-none rounded-md"
-          style={{
-            cursor: value.trim() && !submitting ? 'pointer' : 'default',
-            opacity: value.trim() && !submitting ? 1 : 0.5,
-          }}
-        >
-          {submitting ? '...' : 'Send'}
-        </button>
-      )}
-    </div>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Comment node (full rendering with threading)
+// Comment node (recursive)
 // ---------------------------------------------------------------------------
 
 function CommentNode({
@@ -162,23 +71,21 @@ function CommentNode({
           : <CantonAvatar canton={comment.author.canton} color={comment.author.color} size={28} />
         }
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <span className="font-semibold text-gray-700">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">
               {isExtern
                 ? (comment.author.handle || comment.author.displayName || 'Bluesky')
                 : (comment.author.displayName || 'Anonym')}
             </span>
             {isExtern && (
-              <span className="text-[10px] px-1.5 py-px rounded bg-blue-50 text-blue-600">
-                Bluesky
-              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Bluesky</Badge>
             )}
             <span>{comment.record.createdAt ? formatRelativeTime(comment.record.createdAt) : ''}</span>
           </div>
-          <div className="text-sm text-gray-700 leading-normal mt-0.5">
+          <div className="text-sm leading-normal mt-0.5">
             {comment.record.body}
           </div>
-          <div className="flex gap-3.5 mt-1 text-xs text-gray-400">
+          <div className="flex gap-3.5 mt-1 text-xs text-muted-foreground">
             <button
               onClick={(e) => { e.stopPropagation(); onLikeToggle(comment); }}
               className="bg-transparent border-none p-0 cursor-pointer text-xs"
@@ -189,7 +96,7 @@ function CommentNode({
             {!isExtern && (
               <button
                 onClick={(e) => { e.stopPropagation(); onReply(comment.uri); }}
-                className="bg-transparent border-none p-0 cursor-pointer text-xs text-gray-400"
+                className="bg-transparent border-none p-0 cursor-pointer text-xs text-muted-foreground"
               >
                 {'\ud83d\udcac'} Reply
               </button>
@@ -230,24 +137,13 @@ function ArgumentContextBox({
   likeCount?: number;
   commentCount?: number;
 }) {
-  const isPro = type === 'PRO';
   return (
-    <div className="bg-gray-50 px-3 py-2 mb-4 rounded-r" style={{ borderLeft: '3px solid #4a90e2' }}>
+    <div className="bg-muted px-3 py-2 mb-4 rounded-r" style={{ borderLeft: '3px solid #4a90e2' }}>
       <div className="flex items-center gap-2">
-        <span className="font-bold text-xs text-gray-700 flex-1">{title}</span>
-        {type && (
-          <span
-            className="text-xs font-semibold px-2 py-0.5 rounded-full"
-            style={{
-              backgroundColor: isPro ? '#e8f5e9' : '#ffebee',
-              color: isPro ? '#2e7d32' : '#c62828',
-            }}
-          >
-            {isPro ? 'Pro' : 'Contra'}
-          </span>
-        )}
+        <span className="font-bold text-xs flex-1">{title}</span>
+        {type && <ProContraBadge type={type.toLowerCase()} variant="soft" />}
       </div>
-      <div className="flex gap-3 mt-1 text-xs text-gray-400">
+      <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
         {likeCount !== undefined && <span>{'\u2661'} {likeCount}</span>}
         {commentCount !== undefined && <span>{'\ud83d\udcac'} {commentCount}</span>}
       </div>
@@ -269,13 +165,13 @@ function AncestorStrip({ comment, indent, onNavigate }: { comment: CommentWithMe
     <div style={{ paddingLeft: indent, paddingTop: 6, paddingBottom: 6 }}>
       <div
         onClick={() => onNavigate(comment.uri)}
-        className="flex items-center gap-1.5 bg-gray-100 rounded px-2 py-1 text-xs text-gray-500 cursor-pointer"
+        className="flex items-center gap-1.5 bg-muted rounded px-2 py-1 text-xs text-muted-foreground cursor-pointer"
       >
         {isExtern
           ? <BskyAvatar size={20} />
           : <CantonAvatar canton={comment.author.canton} color={comment.author.color} size={20} />
         }
-        <span className="font-semibold text-gray-600 whitespace-nowrap">
+        <span className="font-semibold text-foreground whitespace-nowrap">
           {isExtern
             ? (comment.author.handle || comment.author.displayName || 'Bluesky')
             : (comment.author.displayName || 'Anonym')}:
@@ -326,13 +222,11 @@ export default function CommentDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auth guard
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) router.push('/');
   }, [isAuthenticated, authLoading, router]);
 
-  // Load data
   useEffect(() => {
     if (!isAuthenticated || authLoading || !commentUri) return;
 
@@ -343,7 +237,6 @@ export default function CommentDetailPage() {
         const { comment, argument: arg } = await getComment(commentUri);
         const allCmts = await listComments(arg.uri);
 
-        // Build comment map (includes focal comment in case it's not in allCmts)
         const commentMap = new Map<string, CommentWithMetadata>();
         for (const c of allCmts) {
           commentMap.set(c.uri, { ...c, replies: [] });
@@ -352,17 +245,13 @@ export default function CommentDetailPage() {
           commentMap.set(comment.uri, { ...comment, replies: [] });
         }
 
-        // Populate replies
         for (const c of allCmts) {
           if (c.parentUri && commentMap.has(c.parentUri)) {
             commentMap.get(c.parentUri)!.replies!.push(commentMap.get(c.uri)!);
           }
         }
 
-        // Build ancestors
         const chain = buildAncestorChain(commentMap, comment.uri);
-
-        // Direct replies with their full sub-trees
         const replies = allCmts
           .filter(c => c.parentUri === comment.uri)
           .map(c => commentMap.get(c.uri)!);
@@ -444,7 +333,6 @@ export default function CommentDetailPage() {
     try {
       await createComment(argument.uri, '', replyText.trim(), focalComment.uri);
       setReplyText('');
-      // Reload replies
       const allCmts = await listComments(argument.uri);
       const commentMap = new Map<string, CommentWithMetadata>();
       for (const c of allCmts) {
@@ -468,92 +356,79 @@ export default function CommentDetailPage() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        Restoring session...
+      <div className="flex items-center justify-center min-h-[50vh] gap-3">
+        <Spinner />
+        <span className="text-muted-foreground">Restoring session...</span>
       </div>
     );
   }
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-5">
-      <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-4">
+      <Button variant="outline" size="sm" onClick={() => router.push(`/feed/${id}`)}>
+        &larr; Back to Activity Feed
+      </Button>
 
-        {/* Header nav */}
-        <div className="mb-5">
-          <button
-            onClick={() => router.push(`/feed/${id}`)}
-            className="px-5 py-2.5 text-sm bg-blue-500 text-white border-none rounded cursor-pointer"
-          >
-            &#8592; Back to Activity Feed
-          </button>
-        </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription><strong>Error:</strong> {error}</AlertDescription>
+        </Alert>
+      )}
 
-        {/* Error state */}
-        {error && (
-          <div className="p-5 bg-red-50 text-red-700 rounded-lg mb-5 border border-red-200">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
+      {loading && (
+        <Card>
+          <CardContent className="flex items-center justify-center py-10 gap-3">
+            <Spinner />
+            <span className="text-muted-foreground">Loading comment...</span>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Loading state */}
-        {loading && (
-          <div className="text-center p-10 bg-white rounded-lg text-gray-500">
-            Loading comment...
-          </div>
-        )}
+      {!loading && focalComment && argument && (
+        <>
+          <ArgumentContextBox
+            title={argument.title}
+            type={argument.type}
+            likeCount={argument.likeCount}
+            commentCount={argument.commentCount}
+          />
 
-        {/* Content */}
-        {!loading && focalComment && argument && (
-          <>
-            {/* Argument context */}
-            <ArgumentContextBox
-              title={argument.title}
-              type={argument.type}
-              likeCount={argument.likeCount}
-              commentCount={argument.commentCount}
-            />
-
-            {/* Thread section */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 border-b pb-2">
                 Thread
               </div>
 
-              {/* Ancestor chain */}
               {ancestors.map((ancestor, idx) => (
                 <AncestorStrip key={ancestor.uri} comment={ancestor} indent={idx * 16} onNavigate={handleNavigateToComment} />
               ))}
 
-              {/* Focal comment */}
               <div style={{
                 paddingLeft: ancestors.length * 16,
                 paddingTop: ancestors.length > 0 ? 4 : 0,
               }}>
-                <div className="bg-white rounded-r-lg shadow-md px-4 py-3" style={{ borderLeft: '3px solid #1565c0' }}>
-                  {/* Focal author + timestamp */}
+                <div className="bg-card rounded-r-lg shadow-md px-4 py-3" style={{ borderLeft: '3px solid #1565c0' }}>
                   <div className="flex items-center gap-2 mb-2">
                     {focalComment.origin === 'extern'
                       ? <BskyAvatar size={32} />
                       : <CantonAvatar canton={focalComment.author.canton} color={focalComment.author.color} size={32} />
                     }
                     <div>
-                      <div className="font-semibold text-sm text-gray-800">
+                      <div className="font-semibold text-sm">
                         {focalComment.origin === 'extern'
                           ? (focalComment.author.handle || focalComment.author.displayName || 'Bluesky')
                           : (focalComment.author.displayName || 'Anonym')}
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-muted-foreground">
                         {focalComment.record.createdAt ? formatRelativeTime(focalComment.record.createdAt) : ''}
                       </div>
                     </div>
                   </div>
-                  {/* Focal comment text */}
-                  <div className="text-sm text-gray-700 leading-relaxed mb-2.5">
+                  <div className="text-sm leading-relaxed mb-2.5">
                     {focalComment.record.body}
                   </div>
-                  {/* Actions */}
-                  <div className="flex gap-4 text-xs text-gray-400">
+                  <div className="flex gap-4 text-xs text-muted-foreground">
                     <button
                       onClick={() => handleLikeToggle(focalComment)}
                       className="bg-transparent border-none p-0 cursor-pointer text-xs"
@@ -564,14 +439,13 @@ export default function CommentDetailPage() {
                     </button>
                     <button
                       onClick={handleReply}
-                      className="bg-transparent border-none p-0 cursor-pointer text-xs text-blue-500 font-semibold"
+                      className="bg-transparent border-none p-0 cursor-pointer text-xs text-primary font-semibold"
                     >
                       {'\ud83d\udcac'} Reply
                     </button>
                   </div>
                 </div>
 
-                {/* Direct replies */}
                 {directReplies.length > 0 && (
                   <div className="mt-2 pl-4">
                     {directReplies.map((reply) => (
@@ -587,13 +461,12 @@ export default function CommentDetailPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Reply input */}
-            <div className="bg-white rounded-lg shadow-sm px-4 py-3">
-              <div className="text-xs text-gray-600 mb-1.5">
-                Reply to this comment:
-              </div>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="text-xs text-muted-foreground mb-1.5">Reply to this comment:</div>
               <ReplyInput
                 ref={replyInputRef}
                 value={replyText}
@@ -602,10 +475,10 @@ export default function CommentDetailPage() {
                 submitting={submitting}
                 placeholder="Write a reply..."
               />
-            </div>
-          </>
-        )}
-      </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

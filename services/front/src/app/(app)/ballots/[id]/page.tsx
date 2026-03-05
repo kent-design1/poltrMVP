@@ -7,6 +7,43 @@ import { getBallot, listArguments } from '@/lib/agent';
 import { likeBallot, unlikeBallot } from '@/lib/ballots';
 import { formatDate } from '@/lib/utils';
 import type { BallotWithMetadata, ArgumentWithMetadata } from '@/types/ballots';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { Spinner } from '@/components/spinner';
+import { ReviewStatusBadge } from '@/components/pro-contra-badge';
+
+function ArgumentCard({ arg, onClick, borderColor }: { arg: ArgumentWithMetadata; onClick: () => void; borderColor: string }) {
+  return (
+    <Card
+      className="cursor-pointer hover:shadow-md transition-shadow"
+      style={{ borderLeft: `4px solid ${borderColor}` }}
+      onClick={onClick}
+    >
+      <CardContent className="pt-4 pb-4">
+        <div className="flex justify-between items-start mb-2">
+          <h4 className="m-0 text-sm font-medium">
+            {arg.record.title}
+          </h4>
+          <ReviewStatusBadge status={arg.reviewStatus} />
+        </div>
+        <p className="m-0 mb-2 text-sm text-muted-foreground leading-normal">
+          {arg.record.body}
+        </p>
+        <div className="flex gap-3 text-xs text-muted-foreground">
+          {(arg.likeCount ?? 0) > 0 && (
+            <span>{'\u2661'} {arg.likeCount}</span>
+          )}
+          {(arg.commentCount ?? 0) > 0 && (
+            <span>{arg.commentCount} comment{arg.commentCount !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function BallotDetail() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -86,8 +123,9 @@ export default function BallotDetail() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        Restoring session...
+      <div className="flex items-center justify-center min-h-[50vh] gap-3">
+        <Spinner />
+        <span className="text-muted-foreground">Restoring session...</span>
       </div>
     );
   }
@@ -97,105 +135,86 @@ export default function BallotDetail() {
   const contraArgs = arguments_.filter((a) => a.record.type === 'CONTRA');
 
   return (
-    <div className="min-h-screen bg-gray-100 p-5">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push('/ballots')}
-              className="px-5 py-2.5 text-sm bg-blue-500 text-white border-none rounded cursor-pointer"
-            >
-              &#8592; Back to Ballots
-            </button>
-            <button
-              onClick={() => router.push(`/feed/${id}`)}
-              className="px-5 py-2.5 text-sm bg-teal-600 text-white border-none rounded cursor-pointer"
-            >
-              Feed View
-            </button>
-            <button
-              onClick={() => router.push('/review')}
-              className="px-5 py-2.5 text-sm bg-violet-500 text-white border-none rounded cursor-pointer"
-            >
-              Peer Review
-            </button>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => router.push('/ballots')}>
+          &larr; Back to Ballots
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => router.push(`/feed/${id}`)}>
+          Feed View
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => router.push('/review')}>
+          Peer Review
+        </Button>
+      </div>
 
-        {loading && (
-          <div className="text-center p-10 bg-white rounded-lg">
-            <p>Loading ballot...</p>
-          </div>
-        )}
+      {loading && (
+        <Card>
+          <CardContent className="flex items-center justify-center py-10 gap-3">
+            <Spinner />
+            <span className="text-muted-foreground">Loading ballot...</span>
+          </CardContent>
+        </Card>
+      )}
 
-        {error && (
-          <div className="p-5 bg-red-50 text-red-700 rounded-lg mb-5 border border-red-200">
-            <strong>Error:</strong> {error}
-            <button
-              onClick={loadData}
-              className="ml-5 px-4 py-2 bg-red-700 text-white border-none rounded cursor-pointer"
-            >
-              Retry
-            </button>
-          </div>
-        )}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            <span><strong>Error:</strong> {error}</span>
+            <Button variant="destructive" size="sm" onClick={loadData}>Retry</Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
-        {!loading && ballot && (
-          <>
-            {/* Ballot card */}
-            <div className="bg-white p-6 rounded-lg shadow mb-8">
+      {!loading && ballot && (
+        <>
+          <Card>
+            <CardContent className="pt-6">
               <div className="flex justify-between items-start mb-4">
-                <h1 className="m-0 text-gray-700 text-2xl">
-                  {ballot.record.title}
-                </h1>
-                <div className="flex items-center gap-2">
+                <h1 className="m-0 text-2xl font-bold">{ballot.record.title}</h1>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
                   {ballot.record.language && (
-                    <span className="text-xs px-2 py-1 bg-blue-50 rounded text-blue-700">
-                      {ballot.record.language}
-                    </span>
+                    <Badge variant="secondary">{ballot.record.language}</Badge>
                   )}
                   <button
                     type="button"
                     onClick={handleToggleLike}
                     title={ballot.viewer?.like ? 'Unlike' : 'Like'}
-                    className="bg-transparent border border-transparent p-0.5 text-xl cursor-pointer transition-colors duration-200"
+                    className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
                     style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
                   >
                     {ballot.viewer?.like ? '\u2764' : '\u2661'}
                     {(ballot.likeCount ?? 0) > 0 && (
-                      <span className="text-xs ml-1">
-                        {ballot.likeCount}
-                      </span>
+                      <span className="text-xs ml-1">{ballot.likeCount}</span>
                     )}
                   </button>
                 </div>
               </div>
 
               {ballot.record.topic && (
-                <div className="text-sm text-gray-500 mb-2">
+                <p className="text-sm text-muted-foreground mb-2">
                   <strong>Topic:</strong> {ballot.record.topic}
-                </div>
+                </p>
               )}
 
               {ballot.record.text && (
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
                   {ballot.record.text}
                 </p>
               )}
 
-              <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-                <div className="text-sm text-gray-500">
+              <Separator className="my-4" />
+
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-muted-foreground">
                   <strong>Vote Date:</strong> {formatDate(ballot.record.voteDate)}
                 </div>
                 {ballot.record.officialRef && (
-                  <div className="text-xs text-gray-400">
-                    Ref: {ballot.record.officialRef}
-                  </div>
+                  <span className="text-xs text-muted-foreground">Ref: {ballot.record.officialRef}</span>
                 )}
               </div>
 
-              <div className="flex gap-4 mt-3 text-xs text-gray-500">
+              <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
                 {(ballot.argumentCount ?? 0) > 0 && (
                   <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
                 )}
@@ -203,132 +222,63 @@ export default function BallotDetail() {
                   <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Arguments section */}
-            {arguments_.length > 0 && (
-              <div>
-                <h2 className="m-0 mb-5 text-gray-700">Arguments</h2>
-                <div className="grid grid-cols-2 gap-5">
-                  {/* PRO column */}
-                  <div>
-                    <h3 className="m-0 mb-3 text-green-800 text-base uppercase tracking-wide">
-                      Pro ({proArgs.length})
-                    </h3>
-                    <div className="flex flex-col gap-3">
-                      {proArgs.map((arg) => (
-                        <div
-                          key={arg.uri}
-                          onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
-                          className="bg-white p-4 rounded-lg shadow-sm cursor-pointer"
-                          style={{ borderLeft: '4px solid #4caf50' }}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="m-0 text-gray-700 text-sm">
-                              {arg.record.title}
-                            </h4>
-                            {arg.reviewStatus === 'preliminary' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 whitespace-nowrap">
-                                Preliminary
-                              </span>
-                            )}
-                            {arg.reviewStatus === 'approved' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-800 whitespace-nowrap">
-                                Peer-reviewed
-                              </span>
-                            )}
-                            {arg.reviewStatus === 'rejected' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-800 whitespace-nowrap">
-                                Rejected
-                              </span>
-                            )}
-                          </div>
-                          <p className="m-0 mb-2 text-sm text-gray-600 leading-normal">
-                            {arg.record.body}
-                          </p>
-                          <div className="text-xs text-gray-400">
-                            {(arg.likeCount ?? 0) > 0 && (
-                              <span>{'\u2661'} {arg.likeCount}</span>
-                            )}
-                            {(arg.commentCount ?? 0) > 0 && (
-                              <span className="ml-3">
-                                {arg.commentCount} comment{arg.commentCount !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {proArgs.length === 0 && (
-                        <p className="text-gray-400 text-sm">No pro arguments yet.</p>
-                      )}
-                    </div>
+          {arguments_.length > 0 && (
+            <div>
+              <h2 className="text-xl font-semibold mb-4">Arguments</h2>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-green-800 mb-3">
+                    Pro ({proArgs.length})
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {proArgs.map((arg) => (
+                      <ArgumentCard
+                        key={arg.uri}
+                        arg={arg}
+                        borderColor="#4caf50"
+                        onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
+                      />
+                    ))}
+                    {proArgs.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No pro arguments yet.</p>
+                    )}
                   </div>
+                </div>
 
-                  {/* CONTRA column */}
-                  <div>
-                    <h3 className="m-0 mb-3 text-red-800 text-base uppercase tracking-wide">
-                      Contra ({contraArgs.length})
-                    </h3>
-                    <div className="flex flex-col gap-3">
-                      {contraArgs.map((arg) => (
-                        <div
-                          key={arg.uri}
-                          onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
-                          className="bg-white p-4 rounded-lg shadow-sm cursor-pointer"
-                          style={{ borderLeft: '4px solid #ef5350' }}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="m-0 text-gray-700 text-sm">
-                              {arg.record.title}
-                            </h4>
-                            {arg.reviewStatus === 'preliminary' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 whitespace-nowrap">
-                                Preliminary
-                              </span>
-                            )}
-                            {arg.reviewStatus === 'approved' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-800 whitespace-nowrap">
-                                Peer-reviewed
-                              </span>
-                            )}
-                            {arg.reviewStatus === 'rejected' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-800 whitespace-nowrap">
-                                Rejected
-                              </span>
-                            )}
-                          </div>
-                          <p className="m-0 mb-2 text-sm text-gray-600 leading-normal">
-                            {arg.record.body}
-                          </p>
-                          <div className="text-xs text-gray-400">
-                            {(arg.likeCount ?? 0) > 0 && (
-                              <span>{'\u2661'} {arg.likeCount}</span>
-                            )}
-                            {(arg.commentCount ?? 0) > 0 && (
-                              <span className="ml-3">
-                                {arg.commentCount} comment{arg.commentCount !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {contraArgs.length === 0 && (
-                        <p className="text-gray-400 text-sm">No contra arguments yet.</p>
-                      )}
-                    </div>
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-red-800 mb-3">
+                    Contra ({contraArgs.length})
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {contraArgs.map((arg) => (
+                      <ArgumentCard
+                        key={arg.uri}
+                        arg={arg}
+                        borderColor="#ef5350"
+                        onClick={() => router.push(`/ballots/${id}/argument/${arg.uri.split('/').pop()}`)}
+                      />
+                    ))}
+                    {contraArgs.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No contra arguments yet.</p>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {arguments_.length === 0 && !loading && (
-              <div className="text-center p-10 bg-white rounded-lg text-gray-500">
+          {arguments_.length === 0 && !loading && (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
                 No arguments have been submitted for this ballot yet.
-              </div>
-            )}
-          </>
-        )}
-      </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

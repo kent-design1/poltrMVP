@@ -1,91 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, forwardRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { listArguments, listComments, createComment } from '@/lib/agent';
 import { likeContent, unlikeContent } from '@/lib/ballots';
 import { formatRelativeTime } from '@/lib/utils';
 import type { ArgumentWithMetadata, CommentWithMetadata } from '@/types/ballots';
-
-// ---------------------------------------------------------------------------
-// Avatars
-// ---------------------------------------------------------------------------
-
-function CantonAvatar({ canton, color, size = 28 }: { canton?: string; color?: string; size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white font-bold leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: color || '#90a4ae',
-        fontSize: size * 0.4,
-      }}
-    >
-      {canton ? canton.toUpperCase() : '?'}
-    </div>
-  );
-}
-
-function BskyAvatar({ size = 28 }: { size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: '#1185fe',
-        fontSize: size * 0.55,
-      }}
-    >
-      {'\ud83e\udd8b'}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Reply input
-// ---------------------------------------------------------------------------
-
-const ReplyInput = forwardRef<HTMLTextAreaElement, {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  submitting: boolean;
-  placeholder: string;
-}>(function ReplyInput({ value, onChange, onSubmit, submitting, placeholder }, ref) {
-  const [focused, setFocused] = useState(false);
-
-  return (
-    <div className="flex gap-2 items-end py-1.5">
-      <textarea
-        ref={ref}
-        rows={focused ? 3 : 1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => { if (!value) setFocused(false); }}
-        placeholder={placeholder}
-        className="flex-1 px-2.5 py-2 text-xs border border-gray-300 rounded-md resize-none outline-none font-[inherit]"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(); }
-        }}
-      />
-      {(focused || value) && (
-        <button
-          onClick={onSubmit}
-          disabled={!value.trim() || submitting}
-          className="px-3.5 py-2 text-xs bg-blue-500 text-white border-none rounded-md"
-          style={{
-            cursor: value.trim() && !submitting ? 'pointer' : 'default',
-            opacity: value.trim() && !submitting ? 1 : 0.5,
-          }}
-        >
-          {submitting ? '...' : 'Send'}
-        </button>
-      )}
-    </div>
-  );
-});
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Spinner } from '@/components/spinner';
+import { ProContraBadge, ReviewStatusBadge } from '@/components/pro-contra-badge';
+import { CantonAvatar, BskyAvatar } from '@/components/canton-avatar';
+import { ReplyInput } from '@/components/reply-input';
+import { Badge } from '@/components/ui/badge';
 
 // ---------------------------------------------------------------------------
 // Comment node (recursive, clickable)
@@ -123,23 +52,21 @@ function CommentNode({
           : <CantonAvatar canton={comment.author.canton} color={comment.author.color} size={28} />
         }
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <span className="font-semibold text-gray-700">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">
               {isExtern
                 ? (comment.author.handle || comment.author.displayName || 'Bluesky')
                 : (comment.author.displayName || 'Anonym')}
             </span>
             {isExtern && (
-              <span className="text-[10px] px-1.5 py-px rounded bg-blue-50 text-blue-600">
-                Bluesky
-              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Bluesky</Badge>
             )}
             <span>{comment.record.createdAt ? formatRelativeTime(comment.record.createdAt) : ''}</span>
           </div>
-          <div className="text-sm text-gray-700 leading-normal mt-0.5">
+          <div className="text-sm leading-normal mt-0.5">
             {comment.record.body}
           </div>
-          <div className="flex gap-3.5 mt-1 text-xs text-gray-400">
+          <div className="flex gap-3.5 mt-1 text-xs text-muted-foreground">
             <button
               onClick={(e) => { e.stopPropagation(); onLikeToggle(comment); }}
               className="bg-transparent border-none p-0 cursor-pointer text-xs"
@@ -150,7 +77,7 @@ function CommentNode({
             {!isExtern && (
               <button
                 onClick={(e) => { e.stopPropagation(); onReply(comment.uri); }}
-                className="bg-transparent border-none p-0 cursor-pointer text-xs text-gray-400"
+                className="bg-transparent border-none p-0 cursor-pointer text-xs text-muted-foreground"
               >
                 {'\ud83d\udcac'} Reply
               </button>
@@ -281,8 +208,9 @@ export default function ArgumentDetailPage() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        Restoring session...
+      <div className="flex items-center justify-center min-h-[50vh] gap-3">
+        <Spinner />
+        <span className="text-muted-foreground">Restoring session...</span>
       </div>
     );
   }
@@ -291,81 +219,63 @@ export default function ArgumentDetailPage() {
   const isPro = argument?.record.type === 'PRO';
 
   return (
-    <div className="min-h-screen bg-gray-100 p-5">
-      <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-4">
+      <Button variant="outline" size="sm" onClick={() => router.push(`/ballots/${ballotRkey}`)}>
+        &larr; Back to Ballot
+      </Button>
 
-        {/* Header nav */}
-        <div className="mb-5">
-          <button
-            onClick={() => router.push(`/ballots/${ballotRkey}`)}
-            className="px-5 py-2.5 text-sm bg-blue-500 text-white border-none rounded cursor-pointer"
-          >
-            &#8592; Back to Ballot
-          </button>
-        </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription><strong>Error:</strong> {error}</AlertDescription>
+        </Alert>
+      )}
 
-        {/* Error */}
-        {error && (
-          <div className="p-5 bg-red-50 text-red-700 rounded-lg mb-5 border border-red-200">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
+      {loading && (
+        <Card>
+          <CardContent className="flex items-center justify-center py-10 gap-3">
+            <Spinner />
+            <span className="text-muted-foreground">Loading argument...</span>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Loading */}
-        {loading && (
-          <div className="text-center p-10 bg-white rounded-lg text-gray-500">
-            Loading argument...
-          </div>
-        )}
-
-        {/* Content */}
-        {!loading && argument && (
-          <>
-            {/* Argument card */}
-            <div
-              className="bg-white rounded-lg shadow-sm p-4 px-5 mb-4"
-              style={{ borderLeft: `4px solid ${isPro ? '#4caf50' : '#ef5350'}` }}
-            >
+      {!loading && argument && (
+        <>
+          {/* Argument card */}
+          <Card style={{ borderLeft: `4px solid ${isPro ? '#4caf50' : '#ef5350'}` }}>
+            <CardContent className="pt-5">
               <div className="flex items-start gap-2.5 mb-2.5">
-                <h2 className="m-0 text-lg text-gray-900 flex-1 leading-snug">
+                <h2 className="m-0 text-lg font-bold flex-1 leading-snug">
                   {argument.record.title}
                 </h2>
-                <span
-                  className="text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap text-white"
-                  style={{ backgroundColor: isPro ? '#16a34a' : '#dc2626' }}
-                >
-                  {isPro ? 'Pro' : 'Contra'}
-                </span>
+                <ProContraBadge type={argument.record.type?.toLowerCase()} />
               </div>
 
               {argument.record.body && (
-                <p className="m-0 mb-3 text-sm text-gray-700 leading-relaxed">
+                <p className="m-0 mb-3 text-sm text-muted-foreground leading-relaxed">
                   {argument.record.body}
                 </p>
               )}
 
-              <div className="flex gap-4 text-xs text-gray-400 items-center">
+              <div className="flex gap-4 text-xs text-muted-foreground items-center">
                 {(argument.likeCount ?? 0) > 0 && <span>{'\u2661'} {argument.likeCount}</span>}
                 {(argument.commentCount ?? 0) > 0 && (
                   <span>{'\ud83d\udcac'} {argument.commentCount}</span>
                 )}
-                {argument.reviewStatus === 'approved' && (
-                  <span className="text-green-600 font-semibold">✅ Peer-reviewed</span>
-                )}
-                {argument.reviewStatus === 'preliminary' && (
-                  <span className="text-orange-800">Preliminary</span>
-                )}
+                <ReviewStatusBadge status={argument.reviewStatus} />
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Comments thread */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2">
+          {/* Comments thread */}
+          <Card>
+            <CardContent className="pt-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 border-b pb-2">
                 Comments {comments.length > 0 ? `(${comments.length})` : ''}
               </div>
 
               {comments.length === 0 ? (
-                <p className="text-gray-400 text-sm m-0">
+                <p className="text-muted-foreground text-sm m-0">
                   No comments yet. Be the first!
                 </p>
               ) : (
@@ -380,11 +290,13 @@ export default function ArgumentDetailPage() {
                   />
                 ))
               )}
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Comment input */}
-            <div className="bg-white rounded-lg shadow-sm px-4 py-3">
-              <div className="text-xs text-gray-600 mb-1.5">Add a comment:</div>
+          {/* Comment input */}
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="text-xs text-muted-foreground mb-1.5">Add a comment:</div>
               <ReplyInput
                 ref={replyInputRef}
                 value={replyText}
@@ -393,10 +305,10 @@ export default function ArgumentDetailPage() {
                 submitting={submitting}
                 placeholder="Write a comment..."
               />
-            </div>
-          </>
-        )}
-      </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

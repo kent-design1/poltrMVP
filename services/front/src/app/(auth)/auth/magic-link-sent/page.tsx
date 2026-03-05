@@ -2,6 +2,9 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Spinner } from '@/components/spinner';
 
 function MagicLinkSentContent() {
   const router = useRouter();
@@ -11,28 +14,27 @@ function MagicLinkSentContent() {
   const isRegistration = purpose === 'registration';
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-5 text-center">
-      <div className="max-w-lg p-10 bg-gray-100 rounded-lg">
-        <div className="text-5xl mb-5">
-          &#9993;
-        </div>
-        <h1 className="mb-5">Check your email!</h1>
-        <p className="text-base text-gray-500 mb-2.5">
-          We&apos;ve sent a {isRegistration ? 'confirmation' : 'magic'} link to:
-        </p>
-        <p className="text-lg font-bold text-blue-500 mb-8">
-          {email}
-        </p>
-        <p className="text-sm text-gray-500 mb-8">
-          Click the link in the email to {isRegistration ? 'complete your registration' : 'log in'}. The link will expire in {isRegistration ? '30' : '15'} minutes.
-        </p>
-        <button
-          onClick={() => router.push('/')}
-          className="px-6 py-2.5 text-sm bg-white text-blue-500 border border-blue-500 rounded cursor-pointer"
-        >
-          Back to Login
-        </button>
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-screen p-5">
+      <Card className="w-full max-w-lg text-center">
+        <CardHeader>
+          <div className="text-5xl mb-2">&#9993;</div>
+          <CardTitle className="text-2xl">Check your email!</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground">
+            We&apos;ve sent a {isRegistration ? 'confirmation' : 'magic'} link to:
+          </p>
+          <p className="text-lg font-bold text-primary">
+            {email}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Click the link in the email to {isRegistration ? 'complete your registration' : 'log in'}. The link will expire in {isRegistration ? '30' : '15'} minutes.
+          </p>
+          <Button variant="outline" onClick={() => router.push('/')}>
+            Back to Login
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -41,7 +43,7 @@ export default function MagicLinkSent() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center min-h-screen">
-        Loading...
+        <Spinner />
       </div>
     }>
       <MagicLinkSentContent />

@@ -3,6 +3,9 @@
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Spinner } from '@/components/spinner';
 
 function VerifyRegistrationContent() {
   const searchParams = useSearchParams();
@@ -13,7 +16,6 @@ function VerifyRegistrationContent() {
   const hasVerified = useRef(false);
 
   useEffect(() => {
-    // Prevent double verification in StrictMode
     if (hasVerified.current) return;
     hasVerified.current = true;
 
@@ -29,9 +31,7 @@ function VerifyRegistrationContent() {
       try {
         const response = await fetch(`/api/auth/verify-registration`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token, type: 'registration' }),
         });
 
@@ -41,7 +41,6 @@ function VerifyRegistrationContent() {
           throw new Error(data.message || 'Verification failed');
         }
 
-        // Store user data (session token is set as httpOnly cookie by the API route)
         login({
           did: data.user.did,
           handle: data.user.handle,
@@ -49,12 +48,7 @@ function VerifyRegistrationContent() {
         });
 
         setStatus('success');
-
-        // Redirect to home after 2 seconds
-        setTimeout(() => {
-          router.push('/home');
-        }, 2000);
-
+        setTimeout(() => router.push('/home'), 2000);
       } catch (err) {
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Verification failed');
@@ -65,45 +59,38 @@ function VerifyRegistrationContent() {
   }, [searchParams, router, login]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-5 text-center">
-      {status === 'verifying' && (
-        <div>
-          <div className="text-5xl mb-5" style={{ animation: 'spin 1s linear infinite' }}>
-            &#8987;
-          </div>
-          <h2>Verifying your registration...</h2>
-        </div>
-      )}
+    <div className="flex flex-col items-center justify-center min-h-screen p-5">
+      <Card className="w-full max-w-sm text-center">
+        <CardContent className="pt-6 space-y-4">
+          {status === 'verifying' && (
+            <>
+              <Spinner className="mx-auto" size="lg" />
+              <h2 className="text-lg font-semibold">Verifying your registration...</h2>
+            </>
+          )}
 
-      {status === 'success' && (
-        <div>
-          <div className="text-5xl mb-5">
-            &#9989;
-          </div>
-          <h2 className="text-blue-500">Registration Complete!</h2>
-          <p className="text-gray-500 mt-2.5">
-            Redirecting you to the app...
-          </p>
-        </div>
-      )}
+          {status === 'success' && (
+            <>
+              <div className="text-5xl">&#9989;</div>
+              <h2 className="text-lg font-semibold text-primary">Registration Complete!</h2>
+              <p className="text-muted-foreground">
+                Redirecting you to the app...
+              </p>
+            </>
+          )}
 
-      {status === 'error' && (
-        <div>
-          <div className="text-5xl mb-5">
-            &#10060;
-          </div>
-          <h2 className="text-red-500">Verification Failed</h2>
-          <p className="text-gray-500 mt-2.5 mb-5">
-            {error}
-          </p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-6 py-3 text-base bg-blue-500 text-white border-none rounded cursor-pointer"
-          >
-            Back to Login
-          </button>
-        </div>
-      )}
+          {status === 'error' && (
+            <>
+              <div className="text-5xl">&#10060;</div>
+              <h2 className="text-lg font-semibold text-destructive">Verification Failed</h2>
+              <p className="text-muted-foreground">{error}</p>
+              <Button onClick={() => router.push('/')}>
+                Back to Login
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -112,7 +99,7 @@ export default function VerifyRegistration() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center min-h-screen">
-        Loading...
+        <Spinner />
       </div>
     }>
       <VerifyRegistrationContent />

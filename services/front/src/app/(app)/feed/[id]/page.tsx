@@ -7,52 +7,43 @@ import { getBallot, listActivity, markActivitySeen, createArgument } from '@/lib
 import { likeBallot, unlikeBallot } from '@/lib/ballots';
 import { formatDate, formatRelativeTime } from '@/lib/utils';
 import type { BallotWithMetadata, ActivityItem } from '@/types/ballots';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { Spinner } from '@/components/spinner';
+import { ProContraBadge } from '@/components/pro-contra-badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // ---------------------------------------------------------------------------
-// Canton avatar component
-// ---------------------------------------------------------------------------
-
-function CantonAvatar({ canton, color, size = 32 }: { canton?: string; color?: string; size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white font-bold leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: color || '#90a4ae',
-        fontSize: size * 0.4,
-      }}
-    >
-      {canton ? canton.toUpperCase() : '?'}
-    </div>
-  );
-}
-
-function BskyAvatar({ size = 28 }: { size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center text-white leading-none"
-      style={{
-        width: size, height: size, minWidth: size,
-        borderRadius: 4, backgroundColor: '#1185fe',
-        fontSize: size * 0.55,
-      }}
-    >
-      {'\ud83e\udd8b'}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Add Argument Modal
+// Add Argument Modal (using Dialog)
 // ---------------------------------------------------------------------------
 
 function AddArgumentModal({
   ballotUri,
-  onClose,
+  open,
+  onOpenChange,
   onCreated,
 }: {
   ballotUri: string;
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
   const [argType, setArgType] = useState<'PRO' | 'CONTRA'>('PRO');
@@ -68,7 +59,7 @@ function AddArgumentModal({
     try {
       await createArgument(ballotUri, title.trim(), body.trim(), argType);
       onCreated();
-      onClose();
+      onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create argument');
     } finally {
@@ -77,78 +68,62 @@ function AddArgumentModal({
   };
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 flex items-center justify-center z-[1000]"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-xl p-6 w-[90%] max-w-lg max-h-[90vh] overflow-auto"
-      >
-        <h3 className="m-0 mb-4 text-lg">Argument hinzuf&uuml;gen</h3>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Argument hinzuf&uuml;gen</DialogTitle>
+        </DialogHeader>
 
-        <div className="flex gap-2 mb-4">
-          {(['PRO', 'CONTRA'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setArgType(t)}
-              className="flex-1 py-2.5 text-sm font-semibold border-2 rounded-lg cursor-pointer"
-              style={{
-                borderColor: argType === t
-                  ? (t === 'PRO' ? '#4caf50' : '#ef5350')
-                  : '#ddd',
-                backgroundColor: argType === t
-                  ? (t === 'PRO' ? '#e8f5e9' : '#ffebee')
-                  : '#fff',
-                color: t === 'PRO' ? '#2e7d32' : '#c62828',
-              }}
-            >
-              {t === 'PRO' ? 'Pro' : 'Contra'}
-            </button>
-          ))}
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            {(['PRO', 'CONTRA'] as const).map((t) => {
+              const selected = argType === t;
+              const isPro = t === 'PRO';
+              return (
+                <Button
+                  key={t}
+                  type="button"
+                  variant={selected ? 'default' : 'outline'}
+                  className={`flex-1 ${selected ? (isPro ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700') : ''}`}
+                  onClick={() => setArgType(t)}
+                >
+                  {isPro ? 'Pro' : 'Contra'}
+                </Button>
+              );
+            })}
+          </div>
+
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Titel"
+          />
+
+          <Textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Dein Argument..."
+            rows={5}
+          />
+
+          {error && (
+            <p className="text-destructive text-xs">{error}</p>
+          )}
         </div>
 
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Titel"
-          className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md mb-3 box-border outline-none font-[inherit]"
-        />
-
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Dein Argument..."
-          rows={5}
-          className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md mb-3 box-border resize-y outline-none font-[inherit]"
-        />
-
-        {error && (
-          <div className="text-red-700 text-xs mb-3">{error}</div>
-        )}
-
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 text-sm border border-gray-300 rounded-md bg-white cursor-pointer"
-          >
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleSubmit}
             disabled={!title.trim() || !body.trim() || submitting}
-            className="px-5 py-2.5 text-sm border-none rounded-md bg-blue-500 text-white"
-            style={{
-              cursor: title.trim() && body.trim() && !submitting ? 'pointer' : 'default',
-              opacity: title.trim() && body.trim() && !submitting ? 1 : 0.5,
-            }}
           >
             {submitting ? 'Erstellen...' : 'Erstellen'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -161,7 +136,6 @@ interface ActivityCardProps {
   onNavigate: (item: ActivityItem) => void;
 }
 
-// Context avatar — smaller (36px), lighter color; used for parent posts in thread
 function ContextAvatar({ displayName }: { displayName?: string }) {
   const initial = (displayName || '?')[0].toUpperCase();
   return (
@@ -178,7 +152,6 @@ function ContextAvatar({ displayName }: { displayName?: string }) {
   );
 }
 
-// Focal avatar — larger (40px), uses profile color; used for the new/main post
 function FocalAvatar({ canton, color }: { canton?: string; color?: string }) {
   return (
     <div
@@ -194,49 +167,38 @@ function FocalAvatar({ canton, color }: { canton?: string; color?: string }) {
   );
 }
 
-// Argument header bar — shown at top of comment/reply/milestone entries
 function ArgumentHeader({ title, type, approved }: { title: string; type?: 'PRO' | 'CONTRA'; approved?: boolean }) {
   const isPro = type === 'PRO';
   return (
-    <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2">
-      {approved && <span className="text-sm leading-none shrink-0">✅</span>}
+    <div className="bg-card border-b px-4 py-2 flex items-center gap-2">
+      {approved && <span className="text-sm leading-none shrink-0">&#9989;</span>}
       <span
         className="text-xs font-semibold flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-        style={{ color: type === 'PRO' ? '#166534' : type === 'CONTRA' ? '#991b1b' : '#374151' }}
+        style={{ color: type === 'PRO' ? '#166534' : type === 'CONTRA' ? '#991b1b' : undefined }}
       >
         {title}
       </span>
-      {type && (
-        <span
-          className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 text-white"
-          style={{ backgroundColor: isPro ? '#16a34a' : '#dc2626' }}
-        >
-          {isPro ? 'Pro' : 'Contra'}
-        </span>
-      )}
+      {type && <ProContraBadge type={isPro ? 'pro' : 'contra'} />}
     </div>
   );
 }
 
-// Skipped ancestors indicator — dotted vertical line + ellipsis, between ArgumentHeader and context
 function ThreadSkippedRow() {
   return (
-    <div className="bg-white px-4 py-1 flex gap-3">
+    <div className="bg-card px-4 py-1 flex gap-3">
       <div className="w-10 shrink-0 flex flex-col items-center">
         <div className="flex-1 ml-px" style={{ borderLeft: '2px dashed #d1d5db' }} />
       </div>
-      <div className="text-xs text-gray-400 self-center py-0.5">
+      <div className="text-xs text-muted-foreground self-center py-0.5">
         &middot;&middot;&middot;
       </div>
     </div>
   );
 }
 
-// Thread context row — parent post, de-emphasized, with continuous vertical line
 function ThreadContextRow({ displayName, text }: { displayName?: string; text: string }) {
   return (
-    <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex gap-3">
-      {/* Avatar column: line fills full height, avatar on top */}
+    <div className="bg-card border-b px-4 py-2.5 flex gap-3">
       <div className="w-10 shrink-0 relative flex flex-col items-center">
         <div
           className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2"
@@ -244,12 +206,11 @@ function ThreadContextRow({ displayName, text }: { displayName?: string; text: s
         />
         <ContextAvatar displayName={displayName} />
       </div>
-      {/* Content — lighter weight and color than focal */}
       <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm text-gray-600 mb-0.5">
+        <div className="font-semibold text-sm text-muted-foreground mb-0.5">
           {displayName || 'Anonym'}
         </div>
-        <div className="text-sm text-gray-600 leading-snug break-words">
+        <div className="text-sm text-muted-foreground leading-snug break-words">
           {text}
         </div>
       </div>
@@ -257,7 +218,6 @@ function ThreadContextRow({ displayName, text }: { displayName?: string; text: s
   );
 }
 
-// Focal row — the new/current post, visually dominant, with blue left border
 function FocalRow({
   actor,
   text,
@@ -272,65 +232,49 @@ function FocalRow({
   unseen?: boolean;
 }) {
   return (
-    <div className="bg-white px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
-      {/* No thread line on focal — it's the end of the chain */}
+    <div className="bg-card px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
       <FocalAvatar canton={actor.canton} color={actor.color} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: replyTo ? 4 : 6 }}>
-          {/* Bold name + dark color — stronger than context */}
-          <span className="font-bold text-sm text-gray-900">
-            {actor.displayName || 'Anonym'}
-          </span>
-          <span className="text-xs text-gray-400">
-            {formatRelativeTime(timestamp)}
-          </span>
+          <span className="font-bold text-sm">{actor.displayName || 'Anonym'}</span>
+          <span className="text-xs text-muted-foreground">{formatRelativeTime(timestamp)}</span>
           {unseen && (
-            <span
-              className="inline-block rounded-full shrink-0 bg-blue-500"
-              style={{ width: 7, height: 7 }}
-            />
+            <span className="inline-block rounded-full shrink-0 bg-blue-500" style={{ width: 7, height: 7 }} />
           )}
         </div>
-        {/* "Replying to" line in blue — visually links to context above */}
         {replyTo && (
           <div className="text-xs text-blue-600 mb-1.5 font-medium">
             Replying to {replyTo}
           </div>
         )}
-        {/* Focal text — darker and larger than context text */}
-        <div className="text-sm text-gray-900 leading-relaxed break-words">
-          {text}
-        </div>
+        <div className="text-sm leading-relaxed break-words">{text}</div>
       </div>
     </div>
   );
 }
 
-// Action bar — like/comment counts at the bottom of each entry
 function ActionBar({ likeCount, commentCount, argumentLike }: {
   likeCount?: number;
   commentCount?: number;
   argumentLike?: string;
 }) {
   return (
-    <div className="bg-white border-t border-gray-200 px-4 py-2 flex items-center gap-5">
-      <span className="text-xs text-gray-500">
+    <div className="bg-card border-t px-4 py-2 flex items-center gap-5">
+      <span className="text-xs text-muted-foreground">
         {'\ud83d\udcac'} {commentCount ?? 0}
       </span>
       <span className="text-xs" style={{ color: argumentLike ? '#dc2626' : '#6b7280' }}>
         {argumentLike ? '\u2764' : '\u2661'} {likeCount ?? 0}
       </span>
       {argumentLike && (
-        <span className="text-xs text-green-800 font-semibold">
-          {'\u2713'} voted
-        </span>
+        <span className="text-xs text-green-800 font-semibold">{'\u2713'} voted</span>
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// CommentActivityCard — new top-level comment on an argument
+// Activity cards
 // ---------------------------------------------------------------------------
 
 function CommentActivityCard({ item, onNavigate }: ActivityCardProps) {
@@ -338,65 +282,30 @@ function CommentActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border border-gray-200 overflow-hidden mb-4"
+      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} />
-      <FocalRow
-        actor={item.actor}
-        text={item.comment?.text ?? ''}
-        timestamp={item.activityAt}
-        unseen={unseen}
-      />
-      <ActionBar
-        likeCount={item.argument.likeCount}
-        commentCount={item.argument.commentCount}
-        argumentLike={item.viewer?.argumentLike}
-      />
+      <FocalRow actor={item.actor} text={item.comment?.text ?? ''} timestamp={item.activityAt} unseen={unseen} />
+      <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// ReplyActivityCard — reply in a thread (shows parent context above focal)
-// ---------------------------------------------------------------------------
 
 function ReplyActivityCard({ item, onNavigate }: ActivityCardProps) {
   const unseen = !item.viewer?.seen;
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border border-gray-200 overflow-hidden mb-4"
+      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} />
-      {/* Skipped ancestors: dotted line when thread is deeper than parent→reply */}
       {item.parent?.hasParent && <ThreadSkippedRow />}
-      {/* Thread context: parent post with vertical line connecting down to focal */}
-      {item.parent && (
-        <ThreadContextRow
-          displayName={item.parent.displayName}
-          text={item.parent.text}
-        />
-      )}
-      {/* Focal: the reply itself — emphasized */}
-      <FocalRow
-        actor={item.actor}
-        text={item.comment?.text ?? ''}
-        timestamp={item.activityAt}
-        replyTo={item.parent?.displayName}
-        unseen={unseen}
-      />
-      <ActionBar
-        likeCount={item.argument.likeCount}
-        commentCount={item.argument.commentCount}
-        argumentLike={item.viewer?.argumentLike}
-      />
+      {item.parent && <ThreadContextRow displayName={item.parent.displayName} text={item.parent.text} />}
+      <FocalRow actor={item.actor} text={item.comment?.text ?? ''} timestamp={item.activityAt} replyTo={item.parent?.displayName} unseen={unseen} />
+      <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// NewArgumentActivityCard — new argument posted (argument IS the focal content)
-// ---------------------------------------------------------------------------
 
 function NewArgumentActivityCard({ item, onNavigate }: ActivityCardProps) {
   const unseen = !item.viewer?.seen;
@@ -408,94 +317,57 @@ function NewArgumentActivityCard({ item, onNavigate }: ActivityCardProps) {
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border border-gray-200 overflow-hidden mb-4"
+      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
     >
-      {/* No ArgumentHeader — the argument itself is the focal content */}
-      <div className="bg-white px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
+      <div className="bg-card px-4 py-3 flex gap-3" style={{ borderLeft: '4px solid #3b82f6' }}>
         <FocalAvatar canton={item.actor.canton} color={item.actor.color} />
         <div className="flex-1 min-w-0">
-          {/* Author + timestamp header */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="font-bold text-sm text-gray-900">
-              {item.actor.displayName || 'Anonym'}
-            </span>
-            <span className="text-xs text-gray-400">
-              {formatRelativeTime(item.activityAt)}
-            </span>
+            <span className="font-bold text-sm">{item.actor.displayName || 'Anonym'}</span>
+            <span className="text-xs text-muted-foreground">{formatRelativeTime(item.activityAt)}</span>
             {unseen && (
-              <span
-                className="inline-block rounded-full shrink-0"
-                style={{ width: 7, height: 7, backgroundColor: '#0277bd' }}
-              />
+              <span className="inline-block rounded-full shrink-0" style={{ width: 7, height: 7, backgroundColor: '#0277bd' }} />
             )}
           </div>
-          {/* Argument title + PRO/CONTRA badge */}
           <div className="flex items-start gap-2" style={{ marginBottom: preview ? 8 : 0 }}>
-            <span className="font-bold text-sm text-gray-900 flex-1 leading-snug">
-              {item.argument.title}
-            </span>
-            {item.argument.type && (
-              <span
-                className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap text-white"
-                style={{ backgroundColor: isPro ? '#16a34a' : '#dc2626' }}
-              >
-                {isPro ? 'Pro' : 'Contra'}
-              </span>
-            )}
+            <span className="font-bold text-sm flex-1 leading-snug">{item.argument.title}</span>
+            {item.argument.type && <ProContraBadge type={isPro ? 'pro' : 'contra'} />}
           </div>
           {preview && (
-            <div className="text-sm text-gray-600 leading-normal">
-              {preview}
-            </div>
+            <div className="text-sm text-muted-foreground leading-normal">{preview}</div>
           )}
         </div>
       </div>
-      <ActionBar
-        likeCount={item.argument.likeCount}
-        commentCount={item.argument.commentCount}
-        argumentLike={item.viewer?.argumentLike}
-      />
+      <ActionBar likeCount={item.argument.likeCount} commentCount={item.argument.commentCount} argumentLike={item.viewer?.argumentLike} />
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// MilestoneActivityCard — argument approved by community
-// ---------------------------------------------------------------------------
 
 function MilestoneActivityCard({ item, onNavigate }: ActivityCardProps) {
   const unseen = !item.viewer?.seen;
   return (
     <div
       onClick={() => onNavigate(item)}
-      className="cursor-pointer rounded-lg border border-gray-200 overflow-hidden mb-4"
+      className="cursor-pointer rounded-lg border overflow-hidden mb-4"
     >
       <ArgumentHeader title={item.argument.title} type={item.argument.type} approved />
-      <div className="bg-white px-4 py-2.5 flex items-center gap-3">
-        {/* Spacer to align content with focal rows above */}
+      <div className="bg-card px-4 py-2.5 flex items-center gap-3">
         <div className="w-10 shrink-0" />
         <div className="flex-1 flex items-center gap-3">
           <span className="text-xs font-semibold text-green-800">
             {'\ud83c\udf89'} Community approved
           </span>
         </div>
-        <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">
+        <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
           {formatRelativeTime(item.activityAt)}
         </span>
         {unseen && (
-          <span
-            className="inline-block rounded-full shrink-0"
-            style={{ width: 7, height: 7, backgroundColor: '#e65100' }}
-          />
+          <span className="inline-block rounded-full shrink-0" style={{ width: 7, height: 7, backgroundColor: '#e65100' }} />
         )}
       </div>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Activity feed
-// ---------------------------------------------------------------------------
 
 function ActivityFeed({
   activities,
@@ -528,7 +400,7 @@ function ActivityFeed({
 }
 
 // ---------------------------------------------------------------------------
-// Main page component
+// Main page
 // ---------------------------------------------------------------------------
 
 export default function BallotFeed() {
@@ -601,7 +473,6 @@ export default function BallotFeed() {
     }
   }, [id, cursor]);
 
-  // Load on mount and filter change
   useEffect(() => {
     if (!isAuthenticated || authLoading || !id) return;
     setCursor(undefined);
@@ -658,18 +529,13 @@ export default function BallotFeed() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        Restoring session...
+      <div className="flex items-center justify-center min-h-[50vh] gap-3">
+        <Spinner />
+        <span className="text-muted-foreground">Restoring session...</span>
       </div>
     );
   }
   if (!isAuthenticated || !user) return null;
-
-  const filterLabel: Record<string, string> = {
-    all: 'All Activity',
-    comments: 'Comments',
-    arguments: 'Arguments',
-  };
 
   const emptyMessage: Record<string, string> = {
     all: 'No activity yet for this ballot.',
@@ -678,71 +544,55 @@ export default function BallotFeed() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-5">
-      <div className="max-w-3xl mx-auto">
-        {/* Header nav */}
-        <div className="flex justify-between items-center mb-5">
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push('/ballots')}
-              className="px-5 py-2.5 text-sm bg-blue-500 text-white border-none rounded cursor-pointer"
-            >
-              &#8592; Back to Ballots
-            </button>
-            <button
-              onClick={() => router.push(`/ballots/${id}`)}
-              className="px-5 py-2.5 text-sm text-white border-none rounded cursor-pointer"
-              style={{ backgroundColor: '#546e7a' }}
-            >
-              Classic View
-            </button>
-            <button
-              onClick={() => router.push('/review')}
-              className="px-5 py-2.5 text-sm bg-violet-500 text-white border-none rounded cursor-pointer"
-            >
-              Peer Review
-            </button>
-          </div>
-        </div>
+    <div className="space-y-5">
+      {/* Header nav */}
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => router.push('/ballots')}>
+          &larr; Back to Ballots
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => router.push(`/ballots/${id}`)}>
+          Classic View
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => router.push('/review')}>
+          Peer Review
+        </Button>
+      </div>
 
-        {/* Ballot loading / error */}
-        {ballotLoading && (
-          <div className="text-center p-10 bg-white rounded-lg">
-            <p>Loading ballot...</p>
-          </div>
-        )}
+      {/* Ballot loading / error */}
+      {ballotLoading && (
+        <Card>
+          <CardContent className="flex items-center justify-center py-10 gap-3">
+            <Spinner />
+            <span className="text-muted-foreground">Loading ballot...</span>
+          </CardContent>
+        </Card>
+      )}
 
-        {ballotError && (
-          <div className="p-5 bg-red-50 text-red-700 rounded-lg mb-5 border border-red-200">
-            <strong>Error:</strong> {ballotError}
-            <button
-              onClick={loadBallot}
-              className="ml-5 px-4 py-2 bg-red-700 text-white border-none rounded cursor-pointer"
-            >
-              Retry
-            </button>
-          </div>
-        )}
+      {ballotError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            <span><strong>Error:</strong> {ballotError}</span>
+            <Button variant="destructive" size="sm" onClick={loadBallot}>Retry</Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
-        {!ballotLoading && ballot && (
-          <>
-            {/* Ballot card */}
-            <div className="bg-white p-6 rounded-lg shadow mb-5">
+      {!ballotLoading && ballot && (
+        <>
+          {/* Ballot card */}
+          <Card>
+            <CardContent className="pt-6">
               <div className="flex justify-between items-start mb-4">
-                <h1 className="m-0 text-gray-700 text-2xl">
-                  {ballot.record.title}
-                </h1>
-                <div className="flex items-center gap-2">
+                <h1 className="m-0 text-2xl font-bold">{ballot.record.title}</h1>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
                   {ballot.record.language && (
-                    <span className="text-xs px-2 py-1 bg-blue-50 rounded text-blue-700">
-                      {ballot.record.language}
-                    </span>
+                    <Badge variant="secondary">{ballot.record.language}</Badge>
                   )}
                   <button
                     type="button"
                     onClick={handleToggleLike}
                     title={ballot.viewer?.like ? 'Unlike' : 'Like'}
-                    className="bg-transparent border border-transparent p-0.5 text-xl cursor-pointer transition-colors duration-200"
+                    className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
                     style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
                   >
                     {ballot.viewer?.like ? '\u2764' : '\u2661'}
@@ -754,29 +604,29 @@ export default function BallotFeed() {
               </div>
 
               {ballot.record.topic && (
-                <div className="text-sm text-gray-500 mb-2">
+                <p className="text-sm text-muted-foreground mb-2">
                   <strong>Topic:</strong> {ballot.record.topic}
-                </div>
+                </p>
               )}
 
               {ballot.record.text && (
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
                   {ballot.record.text}
                 </p>
               )}
 
-              <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-                <div className="text-sm text-gray-500">
+              <Separator className="my-4" />
+
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-muted-foreground">
                   <strong>Vote Date:</strong> {formatDate(ballot.record.voteDate)}
                 </div>
                 {ballot.record.officialRef && (
-                  <div className="text-xs text-gray-400">
-                    Ref: {ballot.record.officialRef}
-                  </div>
+                  <span className="text-xs text-muted-foreground">Ref: {ballot.record.officialRef}</span>
                 )}
               </div>
 
-              <div className="flex gap-4 mt-3 text-xs text-gray-500">
+              <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
                 {(ballot.argumentCount ?? 0) > 0 && (
                   <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
                 )}
@@ -784,95 +634,87 @@ export default function BallotFeed() {
                   <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Activity toolbar */}
-            <div className="sticky top-0 z-10 bg-white rounded-lg px-4 py-2.5 shadow-sm mb-4 flex items-center justify-between gap-3">
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as 'all' | 'comments' | 'arguments')}
-                className="px-3 py-2 text-sm font-semibold border border-gray-300 rounded-md bg-white cursor-pointer outline-none"
-              >
-                <option value="all">All Activity</option>
-                <option value="arguments">Arguments</option>
-                <option value="comments">Comments</option>
-              </select>
+          {/* Activity toolbar */}
+          <div className="sticky top-0 z-10 bg-card rounded-lg px-4 py-2.5 shadow-sm flex items-center justify-between gap-3 border">
+            <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Activity</SelectItem>
+                <SelectItem value="arguments">Arguments</SelectItem>
+                <SelectItem value="comments">Comments</SelectItem>
+              </SelectContent>
+            </Select>
 
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="desktop-add-btn px-4 py-2 text-xs font-semibold bg-blue-500 text-white border-none rounded-md cursor-pointer whitespace-nowrap"
-                style={{ display: 'none' }}
-              >
-                + Argument
-              </button>
-              <style>{`.desktop-add-btn { display: inline-block !important; } @media (max-width: 639px) { .desktop-add-btn { display: none !important; } }`}</style>
-            </div>
+            <Button size="sm" className="hidden sm:inline-flex" onClick={() => setShowAddModal(true)}>
+              + Argument
+            </Button>
+          </div>
 
-            {/* Activity error */}
-            {activityError && (
-              <div className="p-4 bg-red-50 text-red-700 rounded-lg mb-4 border border-red-200">
-                {activityError}
-              </div>
-            )}
+          {/* Activity error */}
+          {activityError && (
+            <Alert variant="destructive">
+              <AlertDescription>{activityError}</AlertDescription>
+            </Alert>
+          )}
 
-            {/* Activity feed */}
-            <div className="max-w-xl mx-auto">
-              {activityLoading ? (
-                <div className="text-center p-10 bg-white rounded-lg text-gray-500 border border-gray-100">
-                  Loading activity...
-                </div>
-              ) : activities.length === 0 ? (
-                <div className="text-center p-10 bg-white rounded-lg text-gray-500 border border-gray-100">
+          {/* Activity feed */}
+          <div className="max-w-xl mx-auto">
+            {activityLoading ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-10 gap-3">
+                  <Spinner />
+                  <span className="text-muted-foreground">Loading activity...</span>
+                </CardContent>
+              </Card>
+            ) : activities.length === 0 ? (
+              <Card>
+                <CardContent className="py-10 text-center text-muted-foreground">
                   {emptyMessage[filter]}
-                </div>
-              ) : (
-                <>
-                  <ActivityFeed
-                    activities={activities}
-                    onNavigate={handleCardClick}
-                  />
-                  {hasMore && (
-                    <div className="text-center py-2 pb-4">
-                      <button
-                        onClick={() => loadActivities(filter, false)}
-                        disabled={loadingMore}
-                        className="px-6 py-2.5 text-sm border border-gray-300 rounded-md bg-white text-gray-700"
-                        style={{
-                          cursor: loadingMore ? 'default' : 'pointer',
-                          opacity: loadingMore ? 0.6 : 1,
-                        }}
-                      >
-                        {loadingMore ? 'Loading...' : 'Load More'}
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <ActivityFeed activities={activities} onNavigate={handleCardClick} />
+                {hasMore && (
+                  <div className="text-center py-2 pb-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => loadActivities(filter, false)}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? 'Loading...' : 'Load More'}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Mobile FAB */}
       {!ballotLoading && ballot && (
-        <button
+        <Button
           onClick={() => setShowAddModal(true)}
-          className="mobile-fab fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-500 text-white border-none text-3xl cursor-pointer shadow-lg z-20"
-          style={{ display: 'none' }}
+          className="fixed bottom-6 right-6 w-14 h-14 rounded-full text-3xl shadow-lg z-20 sm:hidden"
+          size="icon"
         >
           +
-        </button>
+        </Button>
       )}
-      <style>{`@media (max-width: 639px) { .mobile-fab { display: flex !important; align-items: center; justify-content: center; } }`}</style>
 
-      {/* Add argument modal */}
-      {showAddModal && ballot && (
+      {/* Add argument dialog */}
+      {ballot && (
         <AddArgumentModal
           ballotUri={ballot.uri}
-          onClose={() => setShowAddModal(false)}
-          onCreated={() => {
-            loadActivities(filter, true);
-          }}
+          open={showAddModal}
+          onOpenChange={setShowAddModal}
+          onCreated={() => loadActivities(filter, true)}
         />
       )}
     </div>

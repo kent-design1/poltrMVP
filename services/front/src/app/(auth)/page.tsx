@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function Login() {
   const router = useRouter();
@@ -43,7 +47,6 @@ export default function Login() {
         throw new Error(data.message || 'Failed to send magic link');
       }
 
-      // Navigate to confirmation page with email as query param
       router.push(`/auth/magic-link-sent?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send magic link');
@@ -53,54 +56,50 @@ export default function Login() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-5">
-      <h1>Login to POLTR</h1>
-      <p className="mb-8 text-gray-500">
-        Enter your email to login to poltr.
-      </p>
-      <form onSubmit={handleSubmit} className="w-full max-w-sm">
-        <div className="mb-5">
-          <label htmlFor="email" className="block mb-2">
-            Email address:
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="your@email.com"
-            required
-            disabled={loading}
-            className="w-full p-2.5 text-base border border-gray-300 rounded"
-          />
-        </div>
-        {error && (
-          <div className="text-red-500 mb-5 p-2.5 bg-red-50 rounded">
-            {error}
-          </div>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 text-base text-white border-none rounded mb-4"
-          style={{
-            backgroundColor: loading ? '#ccc' : '#0085ff',
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading ? 'Sending...' : 'Send Magic Link'}
-        </button>
-
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => router.push('/auth/register')}
-            disabled={loading}
-            className="bg-transparent border-none text-blue-500 cursor-pointer underline text-sm"
-          >
-            Don&apos;t have an account? Register
-          </button>
-        </div>
-      </form>
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Login to POLTR</CardTitle>
+          <CardDescription>
+            Enter your email to login to poltr.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email address
+              </label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                required
+                disabled={loading}
+              />
+            </div>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Sending...' : 'Send Magic Link'}
+            </Button>
+            <div className="text-center">
+              <Button
+                type="button"
+                variant="link"
+                onClick={() => router.push('/auth/register')}
+                disabled={loading}
+              >
+                Don&apos;t have an account? Register
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
