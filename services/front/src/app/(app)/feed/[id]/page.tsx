@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/spinner';
 import { ProContraBadge } from '@/components/pro-contra-badge';
+import { FullWidthDivider } from '@/components/full-width-divider';
 import {
   Dialog,
   DialogContent,
@@ -637,8 +638,10 @@ export default function BallotFeed() {
             </CardContent>
           </Card>
 
+          <FullWidthDivider className="my-5" />
+
           {/* Activity toolbar */}
-          <div className="sticky top-0 z-10 bg-card rounded-lg px-4 py-2.5 shadow-sm flex items-center justify-between gap-3 border">
+          <div className="sticky top-14 z-10 bg-card rounded-lg px-4 py-2.5 shadow-sm flex items-center justify-between gap-3 border">
             <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />

@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/spinner';
 import { ReviewStatusBadge } from '@/components/pro-contra-badge';
+import { FullWidthDivider } from '@/components/full-width-divider';
 
 function ArgumentCard({ arg, onClick, borderColor }: { arg: ArgumentWithMetadata; onClick: () => void; borderColor: string }) {
   return (
@@ -227,6 +228,7 @@ export default function BallotDetail() {
 
           {arguments_.length > 0 && (
             <div>
+              <FullWidthDivider className="my-6" />
               <h2 className="text-xl font-semibold mb-4">Arguments</h2>
               <div className="grid grid-cols-2 gap-5">
                 <div>

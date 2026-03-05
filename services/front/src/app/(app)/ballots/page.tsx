@@ -13,6 +13,106 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/spinner';
 import { Separator } from '@/components/ui/separator';
+import { FullWidthDivider } from '@/components/full-width-divider';
+
+function BallotCard({ ballot, onLike, onClick }: {
+  ballot: BallotWithMetadata;
+  onLike: (b: BallotWithMetadata) => void;
+  onClick: () => void;
+}) {
+  return (
+    <Card
+      className="cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
+      onClick={onClick}
+    >
+      <CardContent className="pt-6">
+        <div className="flex justify-between items-start mb-2">
+          <h3 className="font-semibold text-lg leading-tight">
+            {ballot.record.title}
+          </h3>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            {ballot.record.language && (
+              <Badge variant="secondary">{ballot.record.language}</Badge>
+            )}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onLike(ballot);
+              }}
+              title={ballot.viewer?.like ? 'Unlike' : 'Like'}
+              className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
+              style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
+            >
+              {ballot.viewer?.like ? '\u2764' : '\u2661'}
+              {(ballot.likeCount ?? 0) > 0 && (
+                <span className="text-xs ml-1">{ballot.likeCount}</span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {ballot.record.topic && (
+          <p className="text-sm text-muted-foreground mb-2">
+            <strong>Topic:</strong> {ballot.record.topic}
+          </p>
+        )}
+
+        {ballot.record.text && (
+          <p className="text-sm text-muted-foreground mb-3 leading-normal line-clamp-3">
+            {ballot.record.text}
+          </p>
+        )}
+
+        <Separator className="my-4" />
+
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-muted-foreground">
+            <strong>Vote Date:</strong><br />
+            {formatDate(ballot.record.voteDate)}
+          </div>
+          {ballot.record.officialRef && (
+            <span className="text-xs text-muted-foreground">
+              Ref: (1) {ballot.record.officialRef}
+            </span>
+          )}
+        </div>
+
+        <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
+          {(ballot.argumentCount ?? 0) > 0 && (
+            <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
+          )}
+          {(ballot.commentCount ?? 0) > 0 && (
+            <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BallotGrid({ ballots, onLike, router }: {
+  ballots: BallotWithMetadata[];
+  onLike: (b: BallotWithMetadata) => void;
+  router: ReturnType<typeof useRouter>;
+}) {
+  if (ballots.length === 0) return null;
+  return (
+    <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
+      {ballots.map((ballot) => {
+        const rkey = ballot.uri.split('/').pop();
+        return (
+          <BallotCard
+            key={ballot.uri}
+            ballot={ballot}
+            onLike={onLike}
+            onClick={() => rkey && router.push(`/ballots/${rkey}`)}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 export default function BallotSearch() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -104,6 +204,10 @@ export default function BallotSearch() {
   }
   if (!isAuthenticated || !user) return null;
 
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = ballots.filter(b => b.record.voteDate >= today);
+  const archived = ballots.filter(b => b.record.voteDate < today);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Swiss Ballot Entries</h1>
@@ -137,87 +241,43 @@ export default function BallotSearch() {
       )}
 
       {!loading && ballots.length > 0 && (
-        <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
-          {ballots.map((ballot) => {
-            const rkey = ballot.uri.split('/').pop();
-            return (
-              <Card
-                key={ballot.uri}
-                className="cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
-                onClick={() => rkey && router.push(`/ballots/${rkey}`)}
-              >
-                <CardContent className="pt-6">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-semibold text-lg leading-tight">
-                      {ballot.record.title}
-                    </h3>
-                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                      {ballot.record.language && (
-                        <Badge variant="secondary">{ballot.record.language}</Badge>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleToggleLike(ballot);
-                        }}
-                        title={ballot.viewer?.like ? 'Unlike' : 'Like'}
-                        className="bg-transparent border-none p-0.5 text-xl cursor-pointer transition-colors duration-200"
-                        style={{ color: ballot.viewer?.like ? '#d81b60' : '#b0bec5' }}
-                      >
-                        {ballot.viewer?.like ? '\u2764' : '\u2661'}
-                        {(ballot.likeCount ?? 0) > 0 && (
-                          <span className="text-xs ml-1">{ballot.likeCount}</span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
+        <>
+          {/* Upcoming ballots */}
+          <section>
+            <h2 className="text-lg font-semibold mb-4">
+              Upcoming
+              {upcoming.length > 0 && (
+                <span className="text-muted-foreground font-normal ml-2 text-sm">
+                  ({upcoming.length})
+                </span>
+              )}
+            </h2>
+            {upcoming.length > 0 ? (
+              <BallotGrid ballots={upcoming} onLike={handleToggleLike} router={router} />
+            ) : (
+              <p className="text-sm text-muted-foreground">No upcoming ballots.</p>
+            )}
+          </section>
 
-                  {ballot.record.topic && (
-                    <p className="text-sm text-muted-foreground mb-2">
-                      <strong>Topic:</strong> {ballot.record.topic}
-                    </p>
-                  )}
+          <FullWidthDivider />
 
-                  {ballot.record.text && (
-                    <p className="text-sm text-muted-foreground mb-3 leading-normal line-clamp-3">
-                      {ballot.record.text}
-                    </p>
-                  )}
-
-                  <Separator className="my-4" />
-
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm text-muted-foreground">
-                      <strong>Vote Date:</strong><br />
-                      {formatDate(ballot.record.voteDate)}
-                    </div>
-                    {ballot.record.officialRef && (
-                      <span className="text-xs text-muted-foreground">
-                        Ref: (1) {ballot.record.officialRef}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-                    {(ballot.argumentCount ?? 0) > 0 && (
-                      <span>{ballot.argumentCount} argument{ballot.argumentCount !== 1 ? 's' : ''}</span>
-                    )}
-                    {(ballot.commentCount ?? 0) > 0 && (
-                      <span>{ballot.commentCount} comment{ballot.commentCount !== 1 ? 's' : ''}</span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {!loading && ballots.length > 0 && (
-        <p className="text-center text-muted-foreground">
-          Found {ballots.length} ballot{ballots.length !== 1 ? 's' : ''}
-        </p>
+          {/* Archived ballots */}
+          <section>
+            <h2 className="text-lg font-semibold mb-4">
+              Archiviert
+              {archived.length > 0 && (
+                <span className="text-muted-foreground font-normal ml-2 text-sm">
+                  ({archived.length})
+                </span>
+              )}
+            </h2>
+            {archived.length > 0 ? (
+              <BallotGrid ballots={archived} onLike={handleToggleLike} router={router} />
+            ) : (
+              <p className="text-sm text-muted-foreground">No archived ballots.</p>
+            )}
+          </section>
+        </>
       )}
     </div>
   );

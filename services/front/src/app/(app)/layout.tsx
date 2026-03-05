@@ -3,13 +3,8 @@
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { useAuth } from "@/lib/AuthContext"
-import { AppSidebar } from "@/components/app-sidebar"
-import {
-  SidebarProvider,
-  SidebarInset,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
+import { AppNav } from "@/components/app-nav"
+import { Spinner } from "@/components/spinner"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -24,7 +19,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <Spinner size="lg" />
       </div>
     )
   }
@@ -34,17 +29,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-        </header>
-        <main className="flex-1 overflow-auto p-4 md:p-6">
-          {children}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex min-h-screen flex-col bg-background">
+      <AppNav />
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6 md:py-8">
+        {children}
+      </main>
+      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">
+        <div className="mx-auto max-w-7xl px-4 md:px-6">
+          <a href="/impressum" className="hover:text-foreground transition-colors">
+            Impressum
+          </a>
+        </div>
+      </footer>
+    </div>
   )
 }
