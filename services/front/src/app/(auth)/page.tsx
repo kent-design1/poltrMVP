@@ -55,51 +55,60 @@ export default function Login() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-5">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Login to POLTR</CardTitle>
-          <CardDescription>
-            Enter your email to login to poltr.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium">
-                Email address
-              </label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                disabled={loading}
-              />
-            </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Sending...' : 'Send Magic Link'}
-            </Button>
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => router.push('/auth/register')}
-                disabled={loading}
-              >
-                Don&apos;t have an account? Register
+    <div className="flex min-h-screen">
+      {/* Left: logo */}
+      <div className="hidden md:flex md:w-1/2 items-center justify-center bg-muted/30">
+        <img src="/logo5.svg" alt="Poltr" className="w-72 h-72 lg:w-96 lg:h-96" />
+      </div>
+
+      {/* Right: login form */}
+      <div className="flex w-full md:w-1/2 flex-col items-center justify-center p-8">
+        <img src="/logo5.svg" alt="Poltr" className="w-32 h-32 mb-6 md:hidden" />
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Login to POLTR</CardTitle>
+            <CardDescription>
+              Enter your email to login to poltr.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-sm font-medium">
+                  Email address
+                </label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  required
+                  disabled={loading}
+                />
+              </div>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Sending...' : 'Send Magic Link'}
               </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+              <div className="text-center">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => router.push('/auth/register')}
+                  disabled={loading}
+                >
+                  Don&apos;t have an account? Register
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

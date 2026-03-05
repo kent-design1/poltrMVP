@@ -107,7 +107,10 @@ function HomeContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight pt-5">Hello {user.displayName}!</h1>
+      <div className="flex items-center gap-4 pt-5">
+        <img src="/logo5.svg" alt="Poltr" className="w-40 h-40" />
+        <h1 className="text-2xl font-bold tracking-tight">Hello {user.displayName}!</h1>
+      </div>
 
       <Card>
         <CardContent className="pt-6">
