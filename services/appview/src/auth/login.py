@@ -212,30 +212,27 @@ async def create_account(user_email: str) -> JSONResponse | RedirectResponse:
         # commit before firing the handle toggle identity event.
         profile_commit_rev = profile_result.get("commit", {}).get("rev")
 
-        logger.debug(f"........profile set (commit rev: {profile_commit_rev}), now writing pseudonym record to PDS")
+        logger.debug(f"........profile set (commit rev: {profile_commit_rev}), now writing pseudonym to DB")
 
-        # Write pseudonym record to PDS
-        pseudonym_record = {
-            "$type": "app.ch.poltr.actor.pseudonym",
-            "displayName": pseudonym["displayName"],
-            "mountainName": pseudonym["mountainName"],
-            "canton": pseudonym["canton"],
-            "height": int(pseudonym["height"]),
-            "color": pseudonym["color"],
-            "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        }
-        if pseudonym.get("mountainFullname"):
-            pseudonym_record["mountainFullname"] = pseudonym["mountainFullname"]
+        # Write pseudonym directly to app_profiles (immutable, insert only)
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO app_profiles
+                  (did, display_name, mountain_name, mountain_fullname, canton, height, color, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (did) DO NOTHING
+                """,
+                user_session.did,
+                pseudonym["displayName"],
+                pseudonym["mountainName"],
+                pseudonym.get("mountainFullname") or pseudonym["mountainName"],
+                pseudonym["canton"],
+                pseudonym["height"],
+                pseudonym["color"],
+            )
 
-        logger.debug(f"Pseudonym record payload: {pseudonym_record}")
-
-        await pds_put_record(
-            user_session.accessJwt,
-            user_session.did,
-            "app.ch.poltr.actor.pseudonym",
-            "self",
-            pseudonym_record,
-        )
+        logger.debug("........pseudonym written to app_profiles")
 
         # Ask relay to crawl our PDS so the new profile is visible on Bluesky
         await relay_request_crawl()
@@ -254,7 +251,7 @@ async def create_account(user_email: str) -> JSONResponse | RedirectResponse:
         await pds_admin_toggle_handle(user_session.did, handle)
 
         logger.debug(
-            "........pseudonym record written, now storing creds in DB and creating session cookie"
+            "........relay indexed, now storing creds in DB and creating session cookie"
         )
 
         # Store encrypted password in auth_creds

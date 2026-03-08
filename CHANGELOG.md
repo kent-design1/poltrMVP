@@ -2,6 +2,11 @@
 
 ## 2026-03-07
 
+### Immutable pseudonyms — no PDS record (`services/appview`, `services/indexer`)
+- **Pseudonyms written directly to `app_profiles`** at registration via `INSERT ... ON CONFLICT DO NOTHING` — no longer stored as PDS record (`app.ch.poltr.actor.pseudonym`)
+- **Removed `COLLECTION_PSEUDONYM` from indexer**: firehose events for pseudonym records are ignored. Removed `upsertProfileDb` and `deleteProfile` from `db.js`
+- **Immutability**: pseudonym is set once at registration and can never be changed or deleted by the user
+
 ### Arguments stored in governance repo (`services/appview`, `services/indexer`, `infra`)
 - **Arguments now written to governance PDS repo** instead of individual user repos. The `create_argument` endpoint uses `create_governance_record()` and includes `authorDid` in the record to track the actual author
 - **New `author_did` column** on `app_arguments` table — the `did` column now always holds the governance account DID, while `author_did` holds the user who authored the argument
