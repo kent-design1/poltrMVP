@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-08
+
+### Argument reimport to governance repo (`infra`)
+- **Updated `import_arguments.py`**: arguments are now written to the governance repo (`admin.id.poltr.ch`) with `authorDid` set to a random non-admin user. No longer writes to individual user repos. Simplified auth: uses governance account credentials directly instead of decrypting per-user app passwords
+- **New `cleanup_arguments_reimport.sql`**: DB cleanup script that deletes all arguments, comments, review invitations, review responses, and related likes, then resets ballot counts. Run before reimporting
+- **Updated `.env`**: governance account set to `admin.id.poltr.ch`
+
 ## 2026-03-07
 
 ### Immutable pseudonyms — no PDS record (`services/appview`, `services/indexer`)
