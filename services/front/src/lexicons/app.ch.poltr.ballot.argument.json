@@ -17,12 +17,17 @@
             "format": "at-uri",
             "description": "AT URI of the ballot entry this argument refers to"
           },
+          "authorDid": {
+            "type": "string",
+            "format": "did",
+            "description": "DID of the user who authored this argument"
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime"
           }
         },
-        "required": ["title", "body", "type", "ballot", "createdAt"]
+        "required": ["title", "body", "type", "ballot", "authorDid", "createdAt"]
       }
     }
   }

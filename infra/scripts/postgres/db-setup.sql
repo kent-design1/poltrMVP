@@ -59,8 +59,9 @@ CREATE INDEX app_likes_did_idx ON app_likes (did);
 CREATE TABLE app_arguments (
   uri           text PRIMARY KEY,       -- at://did/.../app.ch.poltr.ballot.argument/...
   cid           text NOT NULL,
-  did           text NOT NULL,          -- repo DID (author)
+  did           text NOT NULL,          -- repo DID (governance account)
   rkey          text NOT NULL,          -- record key
+  author_did    text NOT NULL,          -- DID of the user who authored this argument
   title         text NOT NULL,
   body          text NOT NULL,
   type          text NOT NULL,          -- 'PRO' or 'CONTRA'
@@ -71,17 +72,16 @@ CREATE TABLE app_arguments (
   like_count    integer NOT NULL DEFAULT 0,
   comment_count integer NOT NULL DEFAULT 0,
   review_status text NOT NULL DEFAULT 'preliminary' CHECK (review_status IN ('preliminary', 'approved', 'rejected')),
-  original_uri  text,               -- governance copies point back to user's original
-  governance_uri text,              -- user's originals point to governance copy once approved
   created_at    timestamptz NOT NULL,
   indexed_at    timestamptz NOT NULL DEFAULT now(),
   deleted       boolean NOT NULL DEFAULT false
 );
 
-CREATE INDEX app_arguments_ballot_uri_idx  ON app_arguments (ballot_uri);
-CREATE INDEX app_arguments_ballot_rkey_idx ON app_arguments (ballot_rkey);
-CREATE INDEX app_arguments_did_idx         ON app_arguments (did);
-CREATE INDEX app_arguments_type_idx        ON app_arguments (type);
+CREATE INDEX app_arguments_ballot_uri_idx    ON app_arguments (ballot_uri);
+CREATE INDEX app_arguments_ballot_rkey_idx   ON app_arguments (ballot_rkey);
+CREATE INDEX app_arguments_did_idx           ON app_arguments (did);
+CREATE INDEX app_arguments_author_did_idx    ON app_arguments (author_did);
+CREATE INDEX app_arguments_type_idx          ON app_arguments (type);
 CREATE INDEX app_arguments_review_status_idx ON app_arguments (review_status);
 
 CREATE TABLE app_review_invitations (

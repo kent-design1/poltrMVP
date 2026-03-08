@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-07
+
+### Arguments stored in governance repo (`services/appview`, `services/indexer`, `infra`)
+- **Arguments now written to governance PDS repo** instead of individual user repos. The `create_argument` endpoint uses `create_governance_record()` and includes `authorDid` in the record to track the actual author
+- **New `author_did` column** on `app_arguments` table — the `did` column now always holds the governance account DID, while `author_did` holds the user who authored the argument
+- **Removed dual-record pattern**: dropped `original_uri` and `governance_uri` columns. No more governance copy creation after peer review approval — arguments live in the governance repo from the start
+- **Cross-posts under governance account**: argument Bluesky cross-posts are now made from the governance account, not the user's account. Removed user session cache from crosspost loop
+- **Updated lexicon** `app.ch.poltr.ballot.argument`: added required `authorDid` field
+- **Migration script**: `infra/scripts/postgres/migrate_arguments_to_governance.sql`
+- **Cleanup script**: `infra/scripts/cleanup_user_arguments.py` — deletes old argument records from user repos on the PDS (dry-run by default)
+
 ## 2026-03-02
 
 ### Comment Detail Page + Feed Navigation (`services/front`, `services/appview`)

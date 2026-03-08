@@ -76,7 +76,7 @@ async def get_pending_reviews(
         rows = await conn.fetch(
             """
             SELECT ri.uri AS invitation_uri, ri.argument_uri, ri.created_at AS invited_at,
-                   a.title, a.body, a.type, a.ballot_uri, a.ballot_rkey, a.did AS author_did
+                   a.title, a.body, a.type, a.ballot_uri, a.ballot_rkey, a.author_did
             FROM app_review_invitations ri
             JOIN app_arguments a ON a.uri = ri.argument_uri AND NOT a.deleted
             WHERE ri.invitee_did = $1
@@ -202,8 +202,7 @@ async def submit_review(
         )
 
     # The review is now on the governance PDS. The indexer will pick it up
-    # via firehose, index it, and run the quorum check. If the quorum is
-    # reached, the appview background loop will create the governance copy.
+    # via firehose, index it, and run the quorum check.
     return JSONResponse(
         status_code=200,
         content={"uri": result.get("uri", "")},
@@ -227,7 +226,7 @@ async def get_review_status(
 
     async with pool.acquire() as conn:
         arg = await conn.fetchrow(
-            "SELECT uri, did, review_status, governance_uri FROM app_arguments WHERE uri = $1 AND NOT deleted",
+            "SELECT uri, author_did, review_status FROM app_arguments WHERE uri = $1 AND NOT deleted",
             argument_uri,
         )
         if not arg:
@@ -255,7 +254,7 @@ async def get_review_status(
 
         # Author sees individual feedback
         reviews = []
-        is_author = session.did == arg["did"]
+        is_author = session.did == arg["author_did"]
         if is_author:
             review_rows = await conn.fetch(
                 """
@@ -279,7 +278,6 @@ async def get_review_status(
     status_data = {
         "argumentUri": argument_uri,
         "reviewStatus": arg["review_status"],
-        "governanceUri": arg["governance_uri"],
         "quorum": quorum,
         "approvals": counts["approvals"],
         "rejections": counts["rejections"],

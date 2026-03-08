@@ -117,7 +117,7 @@ export const handleEvent = async (evt) => {
     if (action === "create" || action === "update") {
       const record = evt.record;
       if (!record) return;
-      await upsertReviewInvitationDb(pool, { uri, cid: cidString, did, rkey, record });
+      await upsertReviewInvitationDb(pool, { uri, cid: cidString, record });
     }
   }
 
@@ -129,7 +129,13 @@ export const handleEvent = async (evt) => {
     if (action === "create" || action === "update") {
       const record = evt.record;
       if (!record) return;
-      await upsertReviewResponseDb(pool, { uri, cid: cidString, did, rkey, record });
+      await upsertReviewResponseDb(pool, {
+        uri,
+        cid: cidString,
+        did,
+        rkey,
+        record,
+      });
     }
   }
 };

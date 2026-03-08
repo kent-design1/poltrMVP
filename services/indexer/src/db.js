@@ -146,7 +146,16 @@ export async function upsertProfileDb(clientOrPool, params) {
       created_at        = EXCLUDED.created_at,
       indexed_at        = now()
     `,
-    [did, displayName, mountainName, mountainFullname, canton, height, color, createdAt],
+    [
+      did,
+      displayName,
+      mountainName,
+      mountainFullname,
+      canton,
+      height,
+      color,
+      createdAt,
+    ],
   );
 }
 
@@ -154,12 +163,8 @@ export async function upsertProfileDb(clientOrPool, params) {
  * Delete a profile from app_profiles.
  */
 export async function deleteProfile(did) {
-  await pool.query(
-    `DELETE FROM app_profiles WHERE did = $1`,
-    [did],
-  );
+  await pool.query(`DELETE FROM app_profiles WHERE did = $1`, [did]);
 }
-
 
 /**
  * Get all active ballots that have a Bluesky cross-post.
@@ -200,34 +205,42 @@ export async function upsertArgumentDb(clientOrPool, params) {
   const ballotUri = record.ballot ?? null;
   const ballotRkey = ballotUri ? ballotUri.split("/").pop() : null;
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
-  const originalUri = record.originalUri ?? null;
-  // Governance copies (have originalUri) are approved; user-submitted are preliminary
-  const reviewStatus = originalUri ? "approved" : "preliminary";
+  const authorDid = record.authorDid ?? did;
 
   await dbQuery(
     clientOrPool,
     `
     INSERT INTO app_arguments
-      (uri, cid, did, rkey, title, body, type, ballot_uri, ballot_rkey,
-       review_status, original_uri, created_at, deleted)
+      (uri, cid, did, rkey, author_did, title, body, type, ballot_uri, ballot_rkey,
+       review_status, created_at, deleted)
     VALUES
-      ($1,  $2,  $3,  $4,  $5,    $6,   $7,   $8,         $9,
-       $10, $11, $12, false)
+      ($1,  $2,  $3,  $4,  $5,  $6,    $7,   $8,   $9,         $10,
+       'preliminary', $11, false)
     ON CONFLICT (uri) DO UPDATE SET
       cid           = EXCLUDED.cid,
+      author_did    = EXCLUDED.author_did,
       title         = EXCLUDED.title,
       body          = EXCLUDED.body,
       type          = EXCLUDED.type,
       ballot_uri    = EXCLUDED.ballot_uri,
       ballot_rkey   = EXCLUDED.ballot_rkey,
-      review_status = EXCLUDED.review_status,
-      original_uri  = EXCLUDED.original_uri,
       created_at    = EXCLUDED.created_at,
       deleted       = false,
       indexed_at    = now()
     `,
-    [uri, cid, did, rkey, title, body, type, ballotUri, ballotRkey,
-     reviewStatus, originalUri, createdAt],
+    [
+      uri,
+      cid,
+      did,
+      rkey,
+      authorDid,
+      title,
+      body,
+      type,
+      ballotUri,
+      ballotRkey,
+      createdAt,
+    ],
   );
 
   if (ballotUri) {
@@ -258,7 +271,10 @@ export async function markArgumentDeleted(uri) {
 /**
  * Update Bluesky engagement counts on a ballot.
  */
-export async function updateBallotBskyCounts(ballotUri, { likeCount, repostCount, replyCount }) {
+export async function updateBallotBskyCounts(
+  ballotUri,
+  { likeCount, repostCount, replyCount },
+) {
   await pool.query(
     `UPDATE app_ballots
      SET bsky_like_count   = $1,
@@ -276,9 +292,23 @@ export async function updateBallotBskyCounts(ballotUri, { likeCount, repostCount
  */
 export async function upsertBskyThreadPost(params) {
   const {
-    uri, cid, did, rkey, text, ballotUri, ballotRkey,
-    parentUri, argumentUri, bskyPostUri, bskyPostCid,
-    handle, displayName, likeCount, repostCount, replyCount, createdAt,
+    uri,
+    cid,
+    did,
+    rkey,
+    text,
+    ballotUri,
+    ballotRkey,
+    parentUri,
+    argumentUri,
+    bskyPostUri,
+    bskyPostCid,
+    handle,
+    displayName,
+    likeCount,
+    repostCount,
+    replyCount,
+    createdAt,
   } = params;
 
   await pool.query(
@@ -304,10 +334,22 @@ export async function upsertBskyThreadPost(params) {
        bsky_reply_count  = EXCLUDED.bsky_reply_count,
        indexed_at        = now()`,
     [
-      uri, cid, did, rkey, text, ballotUri, ballotRkey,
-      parentUri, argumentUri ?? null, bskyPostUri, bskyPostCid,
-      handle, displayName,
-      likeCount ?? 0, repostCount ?? 0, replyCount ?? 0,
+      uri,
+      cid,
+      did,
+      rkey,
+      text,
+      ballotUri,
+      ballotRkey,
+      parentUri,
+      argumentUri ?? null,
+      bskyPostUri,
+      bskyPostCid,
+      handle,
+      displayName,
+      likeCount ?? 0,
+      repostCount ?? 0,
+      replyCount ?? 0,
       createdAt ? new Date(createdAt) : new Date(),
     ],
   );
@@ -322,7 +364,6 @@ export async function upsertCommentDb(clientOrPool, params) {
   const title = record.title ?? null;
   const body = record.body ?? null;
   const argumentUri = record.argument ?? null;
-  const argumentRkey = argumentUri ? argumentUri.split("/").pop() : null;
   const parentUri = record.parent ?? null;
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
 
@@ -362,7 +403,19 @@ export async function upsertCommentDb(clientOrPool, params) {
       deleted      = false,
       indexed_at   = now()
     `,
-    [uri, cid, did, rkey, title, body, ballotUri, ballotRkey, parentUri, argumentUri, createdAt],
+    [
+      uri,
+      cid,
+      did,
+      rkey,
+      title,
+      body,
+      ballotUri,
+      ballotRkey,
+      parentUri,
+      argumentUri,
+      createdAt,
+    ],
   );
 
   if (argumentUri) {
@@ -472,7 +525,7 @@ export async function refreshLikeCount(clientOrPool, subjectUri) {
  * Upsert a review invitation into app_review_invitations.
  */
 export async function upsertReviewInvitationDb(clientOrPool, params) {
-  const { uri, cid, did, rkey, record } = params;
+  const { uri, cid, record } = params;
 
   const argumentUri = record.argument ?? null;
   const inviteeDid = record.invitee ?? null;
@@ -514,7 +567,7 @@ export async function markReviewInvitationDeleted(uri) {
  * After indexing, runs a quorum check and updates review_status if a decision is reached.
  */
 export async function upsertReviewResponseDb(clientOrPool, params) {
-  const { uri, cid, did, rkey, record } = params;
+  const { uri, cid, record } = params;
 
   const argumentUri = record.argument ?? null;
   const reviewerDid = record.reviewer ?? null;
@@ -541,7 +594,16 @@ export async function upsertReviewResponseDb(clientOrPool, params) {
       deleted       = false,
       indexed_at    = now()
     `,
-    [uri, cid, argumentUri, reviewerDid, criteria, vote, justification, createdAt],
+    [
+      uri,
+      cid,
+      argumentUri,
+      reviewerDid,
+      criteria,
+      vote,
+      justification,
+      createdAt,
+    ],
   );
 
   // Post-index quorum check
@@ -553,7 +615,6 @@ export async function upsertReviewResponseDb(clientOrPool, params) {
 /**
  * Check if a peer-review quorum has been reached for an argument.
  * If so, update review_status to 'approved' or 'rejected'.
- * The actual governance PDS copy is created by the appview background loop.
  */
 async function checkReviewQuorum(clientOrPool, argumentUri) {
   const quorum = parseInt(process.env.PEER_REVIEW_QUORUM || "10", 10);

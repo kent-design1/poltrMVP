@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Query, Request, Depends
 from fastapi.responses import JSONResponse
 
@@ -18,6 +19,7 @@ from src.lib.db import get_pool
 from src.lib.cursor import encode_cursor
 from src.lib.lib import get_string, get_date_iso, get_number, get_array, get_object
 from src.lib.atproto_api import pds_create_record, pds_delete_record
+from src.lib.governance_pds import create_governance_record
 
 router = APIRouter(prefix="/xrpc", tags=["poltr"])
 
@@ -269,7 +271,7 @@ async def list_arguments(
                 LIMIT 1
             ) AS viewer_like"""
         if peer_review_on:
-            review_filter = f"AND (a.review_status IN ('approved', 'preliminary') OR a.did = {viewer_param})"
+            review_filter = f"AND (a.review_status IN ('approved', 'preliminary') OR a.author_did = {viewer_param})"
         else:
             review_filter = ""
     else:
@@ -296,7 +298,7 @@ async def list_arguments(
                p.color AS author_color
                {viewer_select}
         FROM app_arguments a
-        LEFT JOIN app_profiles p ON p.did = a.did
+        LEFT JOIN app_profiles p ON p.did = a.author_did
         WHERE a.ballot_rkey = $1 AND NOT a.deleted
           {type_filter}
           {review_filter}
@@ -328,7 +330,7 @@ async def list_arguments(
                 viewer_obj["like"] = row["viewer_like"]
 
             author_raw = {
-                "did": get_string(row, "did") or "",
+                "did": get_string(row, "author_did") or "",
                 "displayName": get_string(row, "author_display_name"),
                 "canton": get_string(row, "author_canton"),
                 "color": get_string(row, "author_color"),
@@ -706,11 +708,15 @@ async def create_argument(
         "body": arg_body,
         "type": arg_type,
         "ballot": ballot_uri,
+        "authorDid": session.did,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
 
     try:
-        result = await pds_create_record(session, "app.ch.poltr.ballot.argument", record)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            result = await create_governance_record(
+                client, "app.ch.poltr.ballot.argument", record
+            )
     except Exception as err:
         logger.error(f"Failed to create argument: {err}")
         return JSONResponse(
@@ -936,7 +942,7 @@ async def list_activity(
                 'new_argument'::text AS activity_type,
                 a.created_at AS activity_at,
                 a.uri AS argument_uri,
-                a.did AS actor_did,
+                a.author_did AS actor_did,
                 a.title AS argument_title,
                 a.body AS argument_body,
                 a.type AS argument_type,
@@ -964,7 +970,7 @@ async def list_activity(
                 'milestone'::text AS activity_type,
                 a.indexed_at AS activity_at,
                 a.uri AS argument_uri,
-                a.did AS actor_did,
+                a.author_did AS actor_did,
                 a.title AS argument_title,
                 NULL::text AS argument_body,
                 a.type AS argument_type,
