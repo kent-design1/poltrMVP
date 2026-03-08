@@ -1,6 +1,6 @@
 # Peer-Review of Arguments
 
-Peer-review is the quality assurance mechanism for user-submitted arguments (PRO/CONTRA) on ballots. It ensures that only community-vetted arguments are published under the governance account.
+Peer-review is the quality assurance mechanism for user-submitted arguments (PRO/CONTRA) on ballots. It ensures that only community-vetted arguments gain the `approved` status.
 
 **Scope:** Only `app.ch.poltr.ballot.argument` records. No other record types are affected.
 
@@ -8,12 +8,18 @@ Peer-review is the quality assurance mechanism for user-submitted arguments (PRO
 
 ## Core Concept
 
-Arguments submitted by users to their own PDS repo are **preliminary** ("vorläufig"). They are visible on the platform but labelled as such. They must undergo a peer-review process before being accepted.
+Arguments are **always stored in the governance account's PDS repo**, even when submitted by individual users. The AppView writes the record to the governance repo on behalf of the user, including the user's DID as `authorDid` in the record.
 
-Upon successful peer-review, the argument is **republished as an exact copy** to the **governance account's PDS repo**. From this point, the argument belongs to the community, not the individual author. The original record remains in the user's PDS as a receipt.
+New arguments start as **preliminary** ("vorläufig"). They are visible on the platform but labelled as such. They must undergo a peer-review process before being accepted.
 
 ```
 User submits argument
+       |
+       v
+  AppView writes to governance PDS (with authorDid)
+       |
+       v
+  Firehose → Indexer indexes with review_status = 'preliminary'
        |
        v
   [PRELIMINARY]  ── visible with label, cross-posted to Bluesky
@@ -21,11 +27,10 @@ User submits argument
        v
   Peer-review process (invitations, reviews)
        |
-       +--> APPROVED  --> exact copy to governance PDS
-       |                   original stays as "receipt"
-       |                   governance copy cross-posted to Bluesky
+       +--> APPROVED  --> review_status flipped to 'approved'
+       |                   cross-post updated (no prefix)
        |
-       +--> REJECTED  --> original labelled "rejected"
+       +--> REJECTED  --> review_status flipped to 'rejected'
                           author sees criteria feedback + justifications
 ```
 
@@ -37,9 +42,9 @@ User submits argument
 
 | State | Location | Visible | Label |
 |-------|----------|---------|-------|
-| Preliminary | User's PDS | Yes (with label) | `preliminary` |
-| Approved | Governance PDS (copy) + User's PDS (receipt) | Yes (governance copy, no label) | `peer-reviewed` on receipt |
-| Rejected | User's PDS | Yes (with label) | `rejected` |
+| Preliminary | Governance PDS | Yes (with label) | `preliminary` |
+| Approved | Governance PDS | Yes (no label) | — |
+| Rejected | Governance PDS | Only to author | `rejected` |
 
 ### State Derivation
 
@@ -49,14 +54,12 @@ The `review_status` column on `app_arguments` is the source of truth. It is set 
 - Quorum reached with majority approval → `approved` (set by indexer)
 - Quorum reached or mathematically impossible → `rejected` (set by indexer)
 
-The original argument record in the user's PDS is never modified. Status lives only in the appview's database.
+### Authorship
 
-### Links
+Since all arguments live in the governance repo, the repo DID (`did` column) is always the governance account. The actual author is tracked via:
 
-| Column | On | Purpose |
-|--------|----|---------|
-| `original_uri` | Governance copy | Points back to the user's original argument |
-| `governance_uri` | User's original | Points to the governance copy (set by appview after PDS write) |
+- **Record field:** `authorDid` in the `app.ch.poltr.ballot.argument` record (publicly visible on PDS)
+- **DB column:** `author_did` on `app_arguments` (used for profile joins, review filtering)
 
 The full review history (invitations, individual reviews with criteria scores and justifications) is stored in the governance PDS and indexed by the appview.
 
@@ -66,7 +69,7 @@ The full review history (invitations, individual reviews with criteria scores an
 
 When `PEER_REVIEW_ENABLED=false` (the default):
 
-- The background loop sleeps without creating invitations or governance copies
+- The background loop sleeps without creating invitations
 - The argument listing endpoint **omits `reviewStatus`** from responses — no badges shown
 - The review filter is disabled — all arguments are shown regardless of `review_status`
 - Cross-posting skips the `[Preliminary]` prefix — arguments posted normally
@@ -88,15 +91,31 @@ The appview background loop (poll interval: `PEER_REVIEW_POLL_INTERVAL_SECONDS`,
 
 **Rationale:** The probabilistic invitation diminishes the chance of manipulation. An attacker would need approximately 3x the number of users to dominate a peer-review compared to a system where all users are invited.
 
+### Invitation Decisions Are Immutable
+
+Every user considered for a review receives an invitation record — either positive (`invited: true`) or negative (`invited: false`, meaning "not selected"). **Once created, these records can never be overwritten, updated, or deleted:**
+
+| Layer | Mechanism |
+|---|---|
+| **DB unique index** | `UNIQUE(argument_uri, invitee_did)` — unconditional (no `WHERE NOT deleted`). One decision per user per argument, forever |
+| **DB insert** | `ON CONFLICT DO NOTHING` — if either the URI or the (argument, invitee) pair already exists, the insert is silently ignored |
+| **No soft-delete** | The `deleted` column does not exist on `app_review_invitations`. There is no way to mark a decision as deleted |
+| **Indexer delete handler** | Firehose delete events for invitations are logged and ignored (no-op) |
+| **AppView pre-check** | DB existence check before calling `put_governance_record`, preventing PDS overwrites from race conditions |
+| **Eligible users query** | Excludes all users with any existing record (positive or negative) |
+
+This ensures the randomized selection is provably fair and tamper-proof: the governance account cannot retroactively change who was invited.
+
 ### Invitation Storage
 
-Invitation records are stored in the **governance PDS** (`app.ch.poltr.review.invitation`). Each invitation references:
+Invitation records are stored in the **governance PDS** (`app.ch.poltr.review.invitation`). Each record contains:
 
 - The argument URI under review
-- The invited user's DID
-- Timestamp of invitation
+- The user's DID
+- Whether they were invited (`true`) or not selected (`false`)
+- Timestamp of the decision
 
-This makes the invitation process fully transparent and auditable: anyone can query the governance repo to see who was invited for any given peer-review.
+This makes the invitation process fully transparent and auditable: anyone can query the governance repo to see who was considered and who was selected for any given peer-review.
 
 ### Continuous Invitation
 
@@ -150,7 +169,7 @@ Storing reviews in the governance PDS (not the reviewer's PDS) ensures:
 
 ### Access Control
 
-The appview enforces that only invited users can submit a review. When a user attempts to submit, the appview checks `app_review_invitations` for a matching record. Uninvited submissions are rejected.
+The appview enforces that only invited users can submit a review. When a user attempts to submit, the appview checks `app_review_invitations` for a matching record with `invited = true`. Uninvited submissions are rejected.
 
 ### Duplicate Prevention
 
@@ -162,9 +181,9 @@ Duplicate invitations and responses are prevented **structurally at the PDS leve
 - `did_suffix` — the part after `did:plc:` of the invitee/reviewer DID (e.g. `3ch7iwf6od4szklpolupbv7o`)
 - **Example:** `7028-3ch7iwf6od4szklpolupbv7o`
 
-Since invitations and responses live in **different collections**, the same rkey format works for both. Using `putRecord` instead of `createRecord` means writing a second invitation/response for the same (argument, user) pair just overwrites the existing record — duplicates are impossible regardless of race conditions or retries.
+Since invitations and responses live in **different collections**, the same rkey format works for both.
 
-The appview also retains a DB-level duplicate check (`SELECT ... FROM app_review_responses`) as a fast-path guard, but it is no longer the sole line of defense.
+For invitations, the DB-level `UNIQUE(argument_uri, invitee_did)` index provides an additional guarantee — even if the PDS record were somehow overwritten, the DB would ignore the duplicate.
 
 ---
 
@@ -198,7 +217,7 @@ PENDING   otherwise
 
 The quorum check runs in the **indexer**, triggered immediately after indexing each `app.ch.poltr.review.response` record from the firehose. This keeps the flow event-driven and consistent with the ATProto architecture (PDS → firehose → indexer → DB).
 
-The indexer updates `review_status` on `app_arguments` but does **not** create the governance PDS copy (it doesn't have governance PDS credentials). The governance copy is created by the appview's background loop (next poll cycle, typically within 60s).
+The indexer updates `review_status` on `app_arguments` directly. Since arguments already live in the governance repo, no separate governance copy needs to be created.
 
 ```
 User submits review
@@ -218,46 +237,52 @@ User submits review
        +--> quorum not reached: nothing
        |
        +--> quorum reached: UPDATE review_status on app_arguments
-                |
-                v
-          AppView background loop (next cycle)
-                |
-                +--> approved: create governance copy on PDS, set governance_uri
-                +--> rejected: nothing (status already set)
 ```
 
 ---
 
 ## Cross-Posting to Bluesky
 
+All argument cross-posts are made under the **governance account** on Bluesky.
+
 | State | Cross-posted? | Details |
 |-------|---------------|---------|
-| Preliminary | Yes | Under author's account, with `[Preliminary]` prefix |
-| Approved (governance copy) | Yes | Under governance account, no prefix |
+| Preliminary | Yes | Under governance account, with `[Preliminary]` prefix |
+| Approved | Yes | Under governance account, no prefix |
 | Rejected | No new cross-post | The preliminary cross-post remains |
 
 When `PEER_REVIEW_ENABLED=false`, the `[Preliminary]` prefix is omitted.
 
 ---
 
+## Indexer: Governance-Only Filtering
+
+The indexer only accepts `app.ch.poltr.ballot.argument` records from the governance repo. Records from user repos are silently ignored. This is enforced via the `PDS_GOVERNANCE_ACCOUNT_DID` environment variable (shared from `pds-secrets`).
+
+The same governance-only filter applies to `app.ch.poltr.ballot.entry` (ballots) and `app.ch.poltr.review.invitation` (invitations).
+
+---
+
 ## ATProto Records
 
-### New Lexicon Records
+### Peer-Review Records
 
 All peer-review records are stored in the **governance account's PDS repo**.
 
 #### `app.ch.poltr.review.invitation`
 
-An invitation for a user to review a specific argument.
+A decision record for whether a user was selected to review an argument.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | argument | string (at-uri) | yes | AT-URI of the argument under review |
-| invitee | string (did) | yes | DID of the invited reviewer |
-| createdAt | string (datetime) | yes | Timestamp of invitation |
+| invitee | string (did) | yes | DID of the user considered for review |
+| invited | boolean | yes | `true` = invited, `false` = not selected |
+| createdAt | string (datetime) | yes | Timestamp of the decision |
 
 - **Key:** `any` — composed rkey `{argument_rkey}-{did_suffix}` (see [Duplicate Prevention](#duplicate-prevention))
 - **Stored in:** Governance PDS
+- **Immutable:** Cannot be overwritten, updated, or deleted
 
 #### `app.ch.poltr.review.response`
 
@@ -285,15 +310,18 @@ A reviewer's evaluation of an argument.
 
 ### Modified Records
 
-#### `app.ch.poltr.ballot.argument` (governance copy)
+#### `app.ch.poltr.ballot.argument`
 
-When an argument is approved, an exact copy is written to the governance PDS with one additional field:
+Arguments are stored exclusively in the governance PDS repo.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| originalUri | string (at-uri) | AT-URI of the original argument in the author's PDS |
-
-All other fields (`title`, `body`, `type`, `ballot`, `createdAt`) are identical to the original.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | yes | Argument title |
+| body | string | yes | Argument body text |
+| type | enum | yes | `PRO` or `CONTRA` |
+| ballot | string (at-uri) | yes | AT-URI of the parent ballot entry |
+| authorDid | string (did) | yes | DID of the user who authored this argument |
+| createdAt | string (datetime) | yes | Timestamp |
 
 ---
 
@@ -301,17 +329,14 @@ All other fields (`title`, `body`, `type`, `ballot`, `createdAt`) are identical 
 
 ### `app_arguments` (modified)
 
-New columns added to the existing table:
-
 | Column | Type | Description |
 |--------|------|-------------|
+| did | text | Governance account DID (repo owner) |
+| author_did | text | DID of the user who authored the argument |
 | review_status | text | `preliminary` (default), `approved`, `rejected` |
-| original_uri | text | Governance copies: AT-URI of the user's original |
-| governance_uri | text | User's originals: AT-URI of the governance copy |
 
-- Index on `review_status`
+- Index on `review_status`, `author_did`
 - `review_status` is set by the indexer's post-index quorum check
-- `governance_uri` is set by the appview when it creates the governance PDS copy
 
 ### `app_review_invitations`
 
@@ -320,12 +345,12 @@ New columns added to the existing table:
 | uri | text PK | AT-URI of the invitation record |
 | cid | text | CID |
 | argument_uri | text | Argument under review |
-| invitee_did | text | Invited reviewer's DID |
-| created_at | timestamptz | When the invitation was created |
+| invitee_did | text | User's DID |
+| invited | boolean | `true` = invited, `false` = not selected |
+| created_at | timestamptz | When the decision was made |
 | indexed_at | timestamptz | When the indexer processed it |
-| deleted | boolean | Soft-delete flag |
 
-Unique constraint: `(argument_uri, invitee_did) WHERE NOT deleted`
+Unique constraint: `UNIQUE(argument_uri, invitee_did)` — unconditional, immutable. No `deleted` column.
 
 ### `app_review_responses`
 
@@ -340,9 +365,8 @@ Unique constraint: `(argument_uri, invitee_did) WHERE NOT deleted`
 | justification | text | Reviewer's justification |
 | created_at | timestamptz | When the review was submitted |
 | indexed_at | timestamptz | When the indexer processed it |
-| deleted | boolean | Soft-delete flag |
 
-Unique constraint: `(argument_uri, reviewer_did) WHERE NOT deleted`
+Unique constraint: `UNIQUE(argument_uri, reviewer_did)` — unconditional, immutable. No `deleted` column.
 
 ---
 
@@ -375,6 +399,7 @@ PEER_REVIEW_CRITERIA: '[...]'          # JSON array of {key, label}
 
 ```yaml
 PEER_REVIEW_QUORUM: "10"              # Must match appview value
+PDS_GOVERNANCE_ACCOUNT_DID: "did:plc:..." # Required for governance-only filtering
 ```
 
 ### Review Criteria
@@ -399,18 +424,17 @@ Stored as `PEER_REVIEW_CRITERIA` env var (JSON). Initial set:
 |------|------|
 | `services/front/src/lexicons/app.ch.poltr.review.invitation.json` | Lexicon schema |
 | `services/front/src/lexicons/app.ch.poltr.review.response.json` | Lexicon schema |
-| `services/indexer/src/record_handler.js` | Firehose handlers for review collections |
-| `services/indexer/src/db.js` | DB upserts + post-index quorum check |
+| `services/indexer/src/record_handler.js` | Firehose handlers for review collections (governance-only filter) |
+| `services/indexer/src/db.js` | DB inserts (immutable for invitations) + post-index quorum check |
 | `services/appview/src/lib/governance_pds.py` | Shared governance PDS session + record creation |
-| `services/appview/src/lib/peer_review.py` | Background loop: invitations + governance copies |
+| `services/appview/src/lib/peer_review.py` | Background loop: invitation decisions (positive + negative) |
 | `services/appview/src/routes/review/__init__.py` | XRPC endpoints |
-| `services/appview/src/routes/poltr/__init__.py` | Modified argument listing |
-| `services/appview/src/lib/crosspost.py` | Modified cross-posting |
+| `services/appview/src/routes/poltr/__init__.py` | Argument creation + listing (governance repo, author_did) |
+| `services/appview/src/lib/crosspost.py` | Cross-posting under governance account |
 | `services/front/src/types/ballots.ts` | TypeScript types |
 | `services/front/src/lib/agent.ts` | Frontend API functions |
-| `services/front/src/app/ballots/[id]/page.tsx` | Review status badges |
-| `services/front/src/app/review/page.tsx` | Review dashboard UI |
-| `infra/scripts/import_peerreviews.py` | Historical data import from Demokratiefabrik xlsx dumps |
+| `infra/scripts/postgres/migrate_arguments_to_governance.sql` | DB migration |
+| `infra/scripts/cleanup_user_arguments.py` | PDS cleanup (delete old user-repo arguments) |
 
 ---
 
@@ -419,4 +443,4 @@ Stored as `PEER_REVIEW_CRITERIA` env var (JSON). Initial set:
 - **Revision flow:** Author cannot revise and resubmit a rejected argument (must create a new one)
 - **Edit suggestions:** Reviewers cannot suggest text edits
 - **Automated deduplication:** Only manual (reviewer criterion) for now
-- **Final editing:** The governance copy is an exact replica; no additional editing step
+- **Final editing:** No additional editing step after approval

@@ -18,6 +18,8 @@ import {
   markReviewResponseDeleted,
 } from "./db.js";
 
+const GOVERNANCE_DID = process.env.PDS_GOVERNANCE_ACCOUNT_DID || "";
+
 const COLLECTION_BALLOT = "app.ch.poltr.ballot.entry";
 const COLLECTION_ARGUMENT = "app.ch.poltr.ballot.argument";
 const COLLECTION_RATING = "app.ch.poltr.content.rating";
@@ -50,6 +52,10 @@ export const handleEvent = async (evt) => {
   const action = evt.event;
 
   if (collection === COLLECTION_BALLOT) {
+    if (GOVERNANCE_DID && did !== GOVERNANCE_DID) {
+      console.log(`Ignoring ballots from non-governance repo: ${did}`);
+      return;
+    }
     if (action === "delete") {
       await markDeleted(uri);
       return;
@@ -62,6 +68,10 @@ export const handleEvent = async (evt) => {
   }
 
   if (collection === COLLECTION_ARGUMENT) {
+    if (GOVERNANCE_DID && did !== GOVERNANCE_DID) {
+      console.log(`Ignoring argument from non-governance repo: ${did}`);
+      return;
+    }
     if (action === "delete") {
       await markArgumentDeleted(uri);
       return;
@@ -110,6 +120,12 @@ export const handleEvent = async (evt) => {
   }
 
   if (collection === COLLECTION_REVIEW_INVITATION) {
+    if (GOVERNANCE_DID && did !== GOVERNANCE_DID) {
+      console.log(
+        `Ignoring review invitation from non-governance repo: ${did}`,
+      );
+      return;
+    }
     if (action === "delete") {
       await markReviewInvitationDeleted(uri);
       return;

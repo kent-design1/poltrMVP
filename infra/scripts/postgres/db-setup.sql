@@ -89,13 +89,13 @@ CREATE TABLE app_review_invitations (
   cid           text NOT NULL,
   argument_uri  text NOT NULL,
   invitee_did   text NOT NULL,
+  invited       boolean NOT NULL,               -- true = invited, false = not selected (immutable)
   created_at    timestamptz NOT NULL,
-  indexed_at    timestamptz NOT NULL DEFAULT now(),
-  deleted       boolean NOT NULL DEFAULT false
+  indexed_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX app_review_invitations_arg_invitee_uniq
-  ON app_review_invitations (argument_uri, invitee_did) WHERE NOT deleted;
+  ON app_review_invitations (argument_uri, invitee_did);
 CREATE INDEX app_review_invitations_argument_uri_idx ON app_review_invitations (argument_uri);
 CREATE INDEX app_review_invitations_invitee_did_idx  ON app_review_invitations (invitee_did);
 
@@ -108,12 +108,11 @@ CREATE TABLE app_review_responses (
   vote          text NOT NULL CHECK (vote IN ('APPROVE', 'REJECT')),
   justification text,
   created_at    timestamptz NOT NULL,
-  indexed_at    timestamptz NOT NULL DEFAULT now(),
-  deleted       boolean NOT NULL DEFAULT false
+  indexed_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX app_review_responses_arg_reviewer_uniq
-  ON app_review_responses (argument_uri, reviewer_did) WHERE NOT deleted;
+  ON app_review_responses (argument_uri, reviewer_did);
 CREATE INDEX app_review_responses_argument_uri_idx ON app_review_responses (argument_uri);
 CREATE INDEX app_review_responses_reviewer_did_idx ON app_review_responses (reviewer_did);
 

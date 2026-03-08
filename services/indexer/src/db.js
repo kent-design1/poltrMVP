@@ -522,44 +522,36 @@ export async function refreshLikeCount(clientOrPool, subjectUri) {
 }
 
 /**
- * Upsert a review invitation into app_review_invitations.
+ * Insert a review invitation. Once created, the decision is immutable:
+ * - ON CONFLICT (uri): do nothing (ignore re-indexing of the same record)
+ * - ON CONFLICT (argument_uri, invitee_did): do nothing (one decision per user per argument, forever)
  */
 export async function upsertReviewInvitationDb(clientOrPool, params) {
   const { uri, cid, record } = params;
 
   const argumentUri = record.argument ?? null;
   const inviteeDid = record.invitee ?? null;
+  const invited = record.invited ?? true;
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
 
   await dbQuery(
     clientOrPool,
     `
     INSERT INTO app_review_invitations
-      (uri, cid, argument_uri, invitee_did, created_at, deleted)
+      (uri, cid, argument_uri, invitee_did, invited, created_at)
     VALUES
-      ($1,  $2,  $3,           $4,          $5,         false)
-    ON CONFLICT (uri) DO UPDATE SET
-      cid          = EXCLUDED.cid,
-      argument_uri = EXCLUDED.argument_uri,
-      invitee_did  = EXCLUDED.invitee_did,
-      created_at   = EXCLUDED.created_at,
-      deleted      = false,
-      indexed_at   = now()
+      ($1,  $2,  $3,           $4,          $5,      $6)
+    ON CONFLICT DO NOTHING
     `,
-    [uri, cid, argumentUri, inviteeDid, createdAt],
+    [uri, cid, argumentUri, inviteeDid, invited, createdAt],
   );
 }
 
 /**
- * Soft-delete a review invitation.
+ * Ignore deletion of review invitations — decisions are immutable.
  */
 export async function markReviewInvitationDeleted(uri) {
-  await pool.query(
-    `UPDATE app_review_invitations
-     SET deleted = true, indexed_at = now()
-     WHERE uri = $1`,
-    [uri],
-  );
+  console.log(`Ignoring delete for review invitation (immutable): ${uri}`);
 }
 
 /**
@@ -576,23 +568,15 @@ export async function upsertReviewResponseDb(clientOrPool, params) {
   const justification = record.justification ?? null;
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
 
-  await dbQuery(
+  const result = await dbQuery(
     clientOrPool,
     `
     INSERT INTO app_review_responses
-      (uri, cid, argument_uri, reviewer_did, criteria, vote, justification, created_at, deleted)
+      (uri, cid, argument_uri, reviewer_did, criteria, vote, justification, created_at)
     VALUES
-      ($1,  $2,  $3,           $4,           $5,       $6,   $7,            $8,         false)
-    ON CONFLICT (uri) DO UPDATE SET
-      cid           = EXCLUDED.cid,
-      argument_uri  = EXCLUDED.argument_uri,
-      reviewer_did  = EXCLUDED.reviewer_did,
-      criteria      = EXCLUDED.criteria,
-      vote          = EXCLUDED.vote,
-      justification = EXCLUDED.justification,
-      created_at    = EXCLUDED.created_at,
-      deleted       = false,
-      indexed_at    = now()
+      ($1,  $2,  $3,           $4,           $5,       $6,   $7,            $8)
+    ON CONFLICT DO NOTHING
+    RETURNING argument_uri
     `,
     [
       uri,
@@ -606,8 +590,9 @@ export async function upsertReviewResponseDb(clientOrPool, params) {
     ],
   );
 
-  // Post-index quorum check
-  if (argumentUri) {
+  // Post-index quorum check (only if a new row was actually inserted)
+  const inserted = result.rows?.length > 0;
+  if (inserted && argumentUri) {
     await checkReviewQuorum(clientOrPool, argumentUri);
   }
 }
@@ -627,7 +612,7 @@ async function checkReviewQuorum(clientOrPool, argumentUri) {
       COUNT(*) FILTER (WHERE vote = 'REJECT') AS rejections,
       COUNT(*) AS total
     FROM app_review_responses
-    WHERE argument_uri = $1 AND NOT deleted
+    WHERE argument_uri = $1
     `,
     [argumentUri],
   );
@@ -660,13 +645,8 @@ async function checkReviewQuorum(clientOrPool, argumentUri) {
 }
 
 /**
- * Soft-delete a review response.
+ * Ignore deletion of review responses — decisions are immutable.
  */
 export async function markReviewResponseDeleted(uri) {
-  await pool.query(
-    `UPDATE app_review_responses
-     SET deleted = true, indexed_at = now()
-     WHERE uri = $1`,
-    [uri],
-  );
+  console.log(`Ignoring delete for review response (immutable): ${uri}`);
 }

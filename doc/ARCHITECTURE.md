@@ -43,7 +43,7 @@ POLTR is an ATProto-based civic-tech platform for Swiss referenda running as a m
   - Backfill endpoint (`/backfill`) triggered by cronjob
 - **Image:** `ghcr.io/nikwyss/poltr-indexer:latest`
 - **Port:** 3000
-- **Secrets:** `indexer-secrets`
+- **Secrets:** `indexer-secrets` + refs to `pds-secrets` (PDS_GOVERNANCE_ACCOUNT_DID)
 - **Endpoint:** https://indexer.poltr.info
 
 #### 4. eID Proto (`services/eidproto`)

@@ -80,13 +80,12 @@ async def get_pending_reviews(
             FROM app_review_invitations ri
             JOIN app_arguments a ON a.uri = ri.argument_uri AND NOT a.deleted
             WHERE ri.invitee_did = $1
-              AND NOT ri.deleted
+              AND ri.invited = true
               AND a.review_status = 'preliminary'
               AND NOT EXISTS (
                 SELECT 1 FROM app_review_responses rr
                 WHERE rr.argument_uri = ri.argument_uri
                   AND rr.reviewer_did = $1
-                  AND NOT rr.deleted
               )
             ORDER BY ri.created_at ASC
             """,
@@ -149,7 +148,7 @@ async def submit_review(
         invitation = await conn.fetchrow(
             """
             SELECT uri FROM app_review_invitations
-            WHERE argument_uri = $1 AND invitee_did = $2 AND NOT deleted
+            WHERE argument_uri = $1 AND invitee_did = $2 AND invited = true
             """,
             argument_uri,
             session.did,
@@ -164,7 +163,7 @@ async def submit_review(
         existing = await conn.fetchrow(
             """
             SELECT uri FROM app_review_responses
-            WHERE argument_uri = $1 AND reviewer_did = $2 AND NOT deleted
+            WHERE argument_uri = $1 AND reviewer_did = $2
             """,
             argument_uri,
             session.did,
@@ -242,13 +241,13 @@ async def get_review_status(
               COUNT(*) FILTER (WHERE vote = 'REJECT') AS rejections,
               COUNT(*) AS total
             FROM app_review_responses
-            WHERE argument_uri = $1 AND NOT deleted
+            WHERE argument_uri = $1
             """,
             argument_uri,
         )
 
         invitation_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM app_review_invitations WHERE argument_uri = $1 AND NOT deleted",
+            "SELECT COUNT(*) FROM app_review_invitations WHERE argument_uri = $1 AND invited = true",
             argument_uri,
         )
 
@@ -260,7 +259,7 @@ async def get_review_status(
                 """
                 SELECT reviewer_did, criteria, vote, justification, created_at
                 FROM app_review_responses
-                WHERE argument_uri = $1 AND NOT deleted
+                WHERE argument_uri = $1
                 ORDER BY created_at ASC
                 """,
                 argument_uri,

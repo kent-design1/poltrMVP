@@ -8,8 +8,20 @@
 - **Removed dual-record pattern**: dropped `original_uri` and `governance_uri` columns. No more governance copy creation after peer review approval — arguments live in the governance repo from the start
 - **Cross-posts under governance account**: argument Bluesky cross-posts are now made from the governance account, not the user's account. Removed user session cache from crosspost loop
 - **Updated lexicon** `app.ch.poltr.ballot.argument`: added required `authorDid` field
+- **Indexer governance-only filter**: ballots, arguments, and review invitations are only indexed from the governance repo (`PDS_GOVERNANCE_ACCOUNT_DID` env var added to indexer deployment)
 - **Migration script**: `infra/scripts/postgres/migrate_arguments_to_governance.sql`
 - **Cleanup script**: `infra/scripts/cleanup_user_arguments.py` — deletes old argument records from user repos on the PDS (dry-run by default)
+
+### Immutable peer-review decisions (`services/indexer`, `services/appview`, `infra`)
+- **Invitation decisions are immutable**: both positive (`invited: true`) and negative (`invited: false`) decisions are stored. Once created, they can never be overwritten, updated, or deleted
+- **Review responses are immutable**: `app.ch.poltr.review.response` records use `ON CONFLICT DO NOTHING` and cannot be soft-deleted. Quorum check only runs on actual new inserts
+- **Updated lexicon** `app.ch.poltr.review.invitation`: added required `invited` boolean field
+- **DB schema changes**:
+  - `app_review_invitations`: added `invited` column, removed `deleted` column, unique index `(argument_uri, invitee_did)` is now unconditional
+  - `app_review_responses`: removed `deleted` column, unique index `(argument_uri, reviewer_did)` is now unconditional
+- **Indexer**: delete events for invitations and review responses are logged and ignored (no-op)
+- **AppView**: peer review loop now creates records for both selected and non-selected users; DB pre-check prevents race conditions on PDS writes
+- **Updated doc**: `doc/PEER_REVIEW.md` fully rewritten, `doc/LEXICONS.md` and `doc/ARCHITECTURE.md` updated
 
 ## 2026-03-02
 

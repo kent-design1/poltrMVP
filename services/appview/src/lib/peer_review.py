@@ -49,7 +49,7 @@ async def _process_pending_invitations():
               AND NOT a.deleted
               AND (
                 SELECT COUNT(*) FROM app_review_invitations ri
-                WHERE ri.argument_uri = a.uri AND NOT ri.deleted
+                WHERE ri.argument_uri = a.uri AND ri.invited = true
               ) < $1
             ORDER BY a.created_at ASC
             LIMIT 20
@@ -87,7 +87,7 @@ async def _invite_for_argument(
         existing_count = await conn.fetchval(
             """
             SELECT COUNT(*) FROM app_review_invitations
-            WHERE argument_uri = $1 AND NOT deleted
+            WHERE argument_uri = $1 AND invited = true
             """,
             argument_uri,
         )
@@ -96,7 +96,7 @@ async def _invite_for_argument(
         if remaining_needed <= 0:
             return
 
-        # Find eligible users: have a valid session, not the author, not already invited
+        # Find eligible users: have a valid session, not the author, no existing decision
         eligible_users = await conn.fetch(
             """
             SELECT DISTINCT s.did
@@ -106,7 +106,7 @@ async def _invite_for_argument(
               AND s.did != $1
               AND s.did NOT IN (
                 SELECT ri.invitee_did FROM app_review_invitations ri
-                WHERE ri.argument_uri = $2 AND NOT ri.deleted
+                WHERE ri.argument_uri = $2
               )
             """,
             author_did,
@@ -121,16 +121,24 @@ async def _invite_for_argument(
         if invited_count >= remaining_needed:
             break
 
-        # Roll the dice
-        if random.random() > probability:
+        user_did = user_row["did"]
+
+        # Double-check: skip if a decision already exists (race condition guard)
+        async with pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM app_review_invitations WHERE argument_uri = $1 AND invitee_did = $2",
+                argument_uri, user_did,
+            )
+        if exists:
             continue
 
-        user_did = user_row["did"]
+        selected = random.random() <= probability
         rkey = compose_review_rkey(argument_uri, user_did)
         invitation_record = {
             "$type": "app.ch.poltr.review.invitation",
             "argument": argument_uri,
             "invitee": user_did,
+            "invited": selected,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -138,8 +146,11 @@ async def _invite_for_argument(
             result = await put_governance_record(
                 client, "app.ch.poltr.review.invitation", rkey, invitation_record
             )
-            logger.info(f"Invited {user_did} to review {argument_uri}: {result.get('uri')}")
-            invited_count += 1
+            if selected:
+                logger.info(f"Invited {user_did} to review {argument_uri}: {result.get('uri')}")
+                invited_count += 1
+            else:
+                logger.info(f"Not selected {user_did} for {argument_uri}: {result.get('uri')}")
         except Exception as err:
             logger.error(f"Failed to create invitation for {user_did}: {err}")
 

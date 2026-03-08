@@ -17,14 +17,18 @@
           "invitee": {
             "type": "string",
             "format": "did",
-            "description": "DID of the invited reviewer"
+            "description": "DID of the user considered for review"
+          },
+          "invited": {
+            "type": "boolean",
+            "description": "true = invited to review, false = not selected"
           },
           "createdAt": {
             "type": "string",
             "format": "datetime"
           }
         },
-        "required": ["argument", "invitee", "createdAt"]
+        "required": ["argument", "invitee", "invited", "createdAt"]
       }
     }
   }
