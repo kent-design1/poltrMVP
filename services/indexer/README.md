@@ -20,6 +20,7 @@ docker run --rm -p 3000:3000 poltr-appview
 
 The container uses `start.sh` to launch `src/indexer.js` and `src/main.js` concurrently. If either exits, the other is terminated so the container lifecycle remains consistent.
 
+
 ### Notes
 - This image installs only production dependencies (`npm ci --omit=dev`).
 - `tini` is used as PID 1 for correct signal handling.
