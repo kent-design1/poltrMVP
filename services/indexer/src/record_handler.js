@@ -68,10 +68,10 @@ export const handleEvent = async (evt) => {
       console.log(`Ignoring argument from non-governance repo: ${did}`);
       return;
     }
-    if (action === "delete") {
-      await markArgumentDeleted(uri);
-      return;
-    }
+    // if (action === "delete") {
+    //   await markArgumentDeleted(uri);
+    //   return;
+    // }
     if (action === "create" || action === "update") {
       const record = evt.record;
       if (!record) return;
@@ -110,11 +110,13 @@ export const handleEvent = async (evt) => {
       );
       return;
     }
-    if (action === "delete") {
-      await markReviewInvitationDeleted(uri);
-      return;
-    }
-    if (action === "create" || action === "update") {
+    // if (action === "delete") {
+    //   await markReviewInvitationDeleted(uri);
+    //   return;
+    // }
+
+    // || action === "update"
+    if (action === "create") {
       const record = evt.record;
       if (!record) return;
       await upsertReviewInvitationDb(pool, { uri, cid: cidString, record });
@@ -122,11 +124,13 @@ export const handleEvent = async (evt) => {
   }
 
   if (collection === COLLECTION_REVIEW_RESPONSE) {
-    if (action === "delete") {
-      await markReviewResponseDeleted(uri);
-      return;
-    }
-    if (action === "create" || action === "update") {
+    // if (action === "delete") {
+    //   await markReviewResponseDeleted(uri);
+    //   return;
+    // }
+
+    // || action === "update"
+    if (action === "create") {
       const record = evt.record;
       if (!record) return;
       await upsertReviewResponseDb(pool, {

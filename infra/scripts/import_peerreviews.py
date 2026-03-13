@@ -7,9 +7,9 @@ Reads two xlsx files:
   - content_peerreview.xlsx: 99 INSERT procedures (aggregated outcomes)
   - content_peerreview_progression.xlsx: 2,562 individual invitation/response rows
 
-Records are written to the governance account's PDS repo using putRecord with
+Records are written to the governance account's PDS repo using createRecord with
 composed rkeys ({content_id}-{mapped_did_suffix}), making duplicates
-structurally impossible and re-runs fully idempotent.
+structurally impossible. Re-runs skip already-existing records.
 
 Environment variables:
   PDS_HOST        PDS endpoint (default: http://localhost:2583)
@@ -180,41 +180,41 @@ class PeerReviewImporter:
         return True
 
     def scan_existing_arguments(self):
-        """Scan governance and all user repos for argument records.
-        Builds content_id → AT URI mapping using the rkey (which is the content_id)."""
-        print("Scanning PDS for existing argument records...")
+        """Scan the governance repo for argument records.
+        Builds content_id → AT URI mapping using the rkey (which is the content_id).
+        Only the governance repo is scanned — arguments live exclusively there."""
+        print(f"Scanning governance repo ({self.gov_did}) for argument records...")
         collection = "app.ch.poltr.ballot.argument"
 
-        for user in self.users:
-            cursor = None
-            while True:
-                url = (
-                    f"{self.pds_host}/xrpc/com.atproto.repo.listRecords"
-                    f"?repo={user.did}&collection={collection}&limit=100"
-                )
-                if cursor:
-                    url += f"&cursor={cursor}"
-                try:
-                    resp = requests.get(url)
-                    if resp.status_code != 200:
-                        break
-                    data = resp.json()
-                    records = data.get("records", [])
-                    for rec in records:
-                        uri = rec.get("uri", "")
-                        rkey = uri.split("/")[-1]
-                        ballot_ref = rec.get("value", {}).get("ballot", "")
-                        if rkey and ballot_ref == self.ballot_uri:
-                            try:
-                                content_id = int(rkey)
-                                self.content_id_to_argument_uri[content_id] = uri
-                            except ValueError:
-                                pass
-                    cursor = data.get("cursor")
-                    if not cursor or not records:
-                        break
-                except Exception:
+        cursor = None
+        while True:
+            url = (
+                f"{self.pds_host}/xrpc/com.atproto.repo.listRecords"
+                f"?repo={self.gov_did}&collection={collection}&limit=100"
+            )
+            if cursor:
+                url += f"&cursor={cursor}"
+            try:
+                resp = requests.get(url)
+                if resp.status_code != 200:
                     break
+                data = resp.json()
+                records = data.get("records", [])
+                for rec in records:
+                    uri = rec.get("uri", "")
+                    rkey = uri.split("/")[-1]
+                    ballot_ref = rec.get("value", {}).get("ballot", "")
+                    if rkey and ballot_ref == self.ballot_uri:
+                        try:
+                            content_id = int(rkey)
+                            self.content_id_to_argument_uri[content_id] = uri
+                        except ValueError:
+                            pass
+                cursor = data.get("cursor")
+                if not cursor or not records:
+                    break
+            except Exception:
+                break
 
         print(f"  Found {len(self.content_id_to_argument_uri)} argument(s) for this ballot")
 
@@ -223,13 +223,14 @@ class PeerReviewImporter:
         idx = hash(old_user_id) % len(self.users)
         return self.users[idx].did
 
-    def _put_record(self, collection: str, rkey: str, record: dict) -> bool:
-        """Write a record to the governance PDS repo via putRecord."""
+    def _create_record(self, collection: str, rkey: str, record: dict) -> bool:
+        """Write a record to the governance PDS repo via createRecord.
+        Fails if the rkey already exists (immutable — no updates)."""
         if self.dry_run:
-            print(f"  [DRY RUN] putRecord {collection}/{rkey}")
+            print(f"  [DRY RUN] createRecord {collection}/{rkey}")
             return True
 
-        url = f"{self.pds_host}/xrpc/com.atproto.repo.putRecord"
+        url = f"{self.pds_host}/xrpc/com.atproto.repo.createRecord"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
@@ -245,6 +246,11 @@ class PeerReviewImporter:
             time.sleep(0.05)
             resp = requests.post(url, headers=headers, json=payload)
             if resp.status_code in (200, 201):
+                return True
+            # PDS returns 500 InternalServerError when rkey already exists
+            # with createRecord (no cleaner error code available)
+            if resp.status_code == 500:
+                print(f"  Skipped (already exists): {collection}/{rkey}")
                 return True
             try:
                 err = resp.json()
@@ -353,7 +359,7 @@ class PeerReviewImporter:
                     "createdAt": _format_datetime(prog.date_created),
                 }
 
-                if self._put_record("app.ch.poltr.review.invitation", rkey, invitation_record):
+                if self._create_record("app.ch.poltr.review.invitation", rkey, invitation_record):
                     invitations_created += 1
                 else:
                     failed += 1
@@ -380,7 +386,7 @@ class PeerReviewImporter:
                         "createdAt": _format_datetime(prog.date_responded),
                     }
 
-                    if self._put_record("app.ch.poltr.review.response", rkey, response_record):
+                    if self._create_record("app.ch.poltr.review.response", rkey, response_record):
                         responses_created += 1
                     else:
                         failed += 1

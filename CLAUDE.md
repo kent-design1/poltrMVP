@@ -177,6 +177,39 @@ The Bluesky relay (`bsky.network`) permanently throttles accounts if it sees an 
 
 **If a PDS reset is needed:** use `infra/scripts/pds_reset.py` — see `doc/RELAY_BLUESKY.md`.
 
+### Peer Review Import
+
+Script: `infra/scripts/import_peerreviews.py`
+
+Imports historical peer-review data from Demokratiefabrik xlsx dumps into the governance PDS as `app.ch.poltr.review.invitation` and `app.ch.poltr.review.response` records. The indexer picks these up from the firehose and runs the quorum check.
+
+**Prerequisites:**
+- Port-forward PDS: `kubectl port-forward -n poltr svc/pds 2583:80`
+- xlsx files in `dump/`: `content_peerreview.xlsx`, `content_peerreview_progression.xlsx`
+- Python deps: `openpyxl`, `requests`
+- Governance account password must be set (reset via admin API if needed, see [Obtaining a User Session via Admin](#obtaining-a-user-session-via-admin))
+
+**Usage:**
+```bash
+PDS_HOST=http://localhost:2583 \
+GOV_HANDLE=did:plc:3ch7iwf6od4szklpolupbv7o \
+GOV_PASSWORD=TempPass12345678 \
+BALLOT_URI="at://did:plc:3ch7iwf6od4szklpolupbv7o/app.ch.poltr.ballot.entry/663" \
+MAX_RESPONSES=1 \
+python3 infra/scripts/import_peerreviews.py
+```
+
+| Env var | Description | Default |
+|---------|-------------|---------|
+| `PDS_HOST` | PDS endpoint | `http://localhost:2583` |
+| `GOV_HANDLE` | Governance account DID or handle | — |
+| `GOV_PASSWORD` | Governance account password | — |
+| `BALLOT_URI` | AT URI of the ballot to scope arguments to | — |
+| `MAX_RESPONSES` | Limit responses imported (0 = all) | `0` |
+| `DRY_RUN` | `true` to inspect without writing | `false` |
+
+Uses `putRecord` with composed rkeys (`{content_id}-{did_suffix}`), so re-runs are idempotent.
+
 # DB Setup Script
 Keep ./scripts/postgres/db-setup.sql file up to date. (it should entail an all setup script for an empty postgres DB.)
 

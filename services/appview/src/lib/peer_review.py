@@ -66,8 +66,12 @@ async def _process_pending_invitations():
         for arg in pending_args:
             try:
                 await _invite_for_argument(
-                    client, pool, arg["uri"], arg["author_did"],
-                    quorum, probability,
+                    client,
+                    pool,
+                    arg["uri"],
+                    arg["author_did"],
+                    quorum,
+                    probability,
                 )
             except Exception as err:
                 logger.error(f"Invitation processing failed for {arg['uri']}: {err}")
@@ -127,7 +131,8 @@ async def _invite_for_argument(
         async with pool.acquire() as conn:
             exists = await conn.fetchval(
                 "SELECT 1 FROM app_review_invitations WHERE argument_uri = $1 AND invitee_did = $2",
-                argument_uri, user_did,
+                argument_uri,
+                user_did,
             )
         if exists:
             continue
@@ -147,10 +152,14 @@ async def _invite_for_argument(
                 client, "app.ch.poltr.review.invitation", rkey, invitation_record
             )
             if selected:
-                logger.info(f"Invited {user_did} to review {argument_uri}: {result.get('uri')}")
+                logger.info(
+                    f"Invited {user_did} to review {argument_uri}: {result.get('uri')}"
+                )
                 invited_count += 1
             else:
-                logger.info(f"Not selected {user_did} for {argument_uri}: {result.get('uri')}")
+                logger.info(
+                    f"Not selected {user_did} for {argument_uri}: {result.get('uri')}"
+                )
         except Exception as err:
             logger.error(f"Failed to create invitation for {user_did}: {err}")
 

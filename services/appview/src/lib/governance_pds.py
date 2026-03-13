@@ -46,7 +46,9 @@ async def _create_governance_session(client: httpx.AsyncClient) -> str:
         json={"identifier": gov_did, "password": gov_pw},
     )
     if resp.status_code != 200:
-        raise RuntimeError(f"Governance createSession failed ({resp.status_code}): {resp.text}")
+        raise RuntimeError(
+            f"Governance createSession failed ({resp.status_code}): {resp.text}"
+        )
 
     data = resp.json()
     _gov_access_jwt = data["accessJwt"]
@@ -67,7 +69,9 @@ async def _refresh_governance_session(client: httpx.AsyncClient) -> str:
         headers={"Authorization": f"Bearer {_gov_refresh_jwt}"},
     )
     if resp.status_code != 200:
-        logger.warning("Governance refreshSession failed, falling back to createSession")
+        logger.warning(
+            "Governance refreshSession failed, falling back to createSession"
+        )
         return await _create_governance_session(client)
 
     data = resp.json()
