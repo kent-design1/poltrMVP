@@ -124,7 +124,7 @@ For production deployment with a real domain:
 
 3. **Or build locally with env file**
    ```bash
-   # Uses .env.production automatically
+   # Uses .env.appView.production automatically
    npm run build
    ```
 

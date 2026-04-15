@@ -14,7 +14,7 @@ services:
       - mongo
       # - postgres
     env_file:
-      - .env
+      - .env.appView
 
   # Ensure your DATABASE_URL uses 'mongo' as the hostname ie. mongodb://mongo/my-db-name
   mongo:

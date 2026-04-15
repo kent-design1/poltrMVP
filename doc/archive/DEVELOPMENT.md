@@ -160,7 +160,7 @@ curl -o echtzeitdaten.json https://ckan.opendata.swiss/api/3/action/package_show
 kubectl port-forward -n poltr deployment/pds 2583:2583
 
 # Import
-source ./infra/scripts/opendata_swiss/.env 
+source ./infra/scripts/opendata_swiss/.env.appView 
 python3 ./infra/scripts/opendata_swiss/import_proposals.py
 ```
 

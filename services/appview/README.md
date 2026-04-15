@@ -25,8 +25,8 @@ psql -U <superuser> -d appview -f infra/scripts/postgres/db-setup.sql
 ### Environment Configuration
 Copy `.env.dist` to `.env` and configure your database connection:
 ```bash
-cp .env.dist .env
-# Edit .env with your APPVIEW_POSTGRES_URL
+cp .env.appView.dist .env.appView
+# Edit .env.appView with your APPVIEW_POSTGRES_URL
 ```
 
 ## Running

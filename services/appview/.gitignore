@@ -5,7 +5,7 @@ __pycache__
 .Python
 venv/
 env/
-.env
+.env.appView
 *.egg-info/
 dist/
 build/

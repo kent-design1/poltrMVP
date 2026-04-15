@@ -1,4 +1,4 @@
 // Any setup scripts you might need go here
 
-// Load .env files
+// Load .env.appView files
 import 'dotenv/config'

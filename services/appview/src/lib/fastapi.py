@@ -13,7 +13,7 @@ import src.lib.db as db
 from src.lib.crosspost import start_crosspost_loop, stop_crosspost_loop
 from src.lib.peer_review import start_peer_review_loop, stop_peer_review_loop
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env.appView")
 
 log_level = os.getenv("APPVIEW_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
