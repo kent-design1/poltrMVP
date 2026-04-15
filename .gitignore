@@ -41,3 +41,6 @@ infomaniak-api-token.txt
 
 */__pycache__
 __pycache__
+
+#Ken's ignore
+services/front/src/.env.local
